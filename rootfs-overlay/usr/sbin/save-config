@@ -1,0 +1,9 @@
+#!/bin/sh
+grep -q ' /overlay ' /proc/mounts 2>/dev/null || exit 0
+mkdir -p /overlay/etc /overlay/root
+for f in shadow shadow- hostname hosts timezone thingino.json wpa_supplicant.conf raptor.conf resolv.conf; do
+	[ -e /etc/$f ] && cp -a /etc/$f /overlay/etc/ 2>/dev/null
+done
+[ -d /etc/network ] && mkdir -p /overlay/etc/network && cp -a /etc/network/. /overlay/etc/network/ 2>/dev/null
+[ -d /root/.ssh ] && mkdir -p /overlay/root/.ssh && cp -a /root/.ssh/. /overlay/root/.ssh/ 2>/dev/null
+sync

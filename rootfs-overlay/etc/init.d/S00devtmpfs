@@ -1,0 +1,2 @@
+#!/bin/sh
+mount -t devtmpfs devtmpfs /dev 2>/dev/null

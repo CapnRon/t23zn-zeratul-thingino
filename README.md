@@ -3,8 +3,11 @@
 Custom firmware for the Wansview A1 (T23ZN, GC2063, ATBM6461, 16 MB NOR) running
 the **thingino userspace inside the Ingenic Zeratul fast-boot chain**.
 
-Status: **increment 2 complete** — thingino boots to a root shell through the
-Zeratul SPL → tag → kernel → initrd path, fully validated on hardware.
+Status: **increment 42** — thingino runs inside the Zeratul SPL → tag → kernel →
+initrd path, and WiFi provisioning/persistence works on hardware: the portal
+provisions the ATBM6461 through MCU ioctls, the lease survives an MCU reset,
+and the full UI is reachable over the LAN. See `docs/WIFI_PROVISIONING.md`.
+Video (`rvd`) is the next piece.
 
 ## What's proven (on hardware, T23ZN dev board)
 
@@ -29,7 +32,8 @@ scripts/        tag generation / image assembly helpers used in testing
 
 | File | md5 | Contents |
 | --- | --- | --- |
-| `artifacts/increment2_final.bin` | `a265e21be5bfd3989fca144e1adf6036` | **current working build**: vendor SPL, our tag (no rd params), thingino kernel, minimal thingino rootfs (busybox init + dropbear), vendor recovery/system |
+| `artifacts/ZRT_increment42_status_ioctl.bin` | `5d45e39235348bf38e5aab81bbbaf98e` | **current working build**: 6M rootfs layout, thingino userspace + overlay, ATBM6461 provisioning via `ATBM_STATUS` ioctl, client persistence across MCU reset, portal/password fixes |
+| `artifacts/increment2_final.bin` | `a265e21be5bfd3989fca144e1adf6036` | increment-2 minimal rootfs (busybox init + dropbear), historical |
 | `artifacts/ZRT_SOC_T23Z_GC2063_UNDIRECT_FW.bin` | `1db5ece5…` | SDK sample replicated through the documented build (increment-2-era layout, boots to `Zeratul login:`) |
 
 ## Kernel / rootfs payloads
@@ -55,6 +59,9 @@ scripts/        tag generation / image assembly helpers used in testing
    `rootfs=6M@0x598000` / `8M@0x2D8000` → `rootfs error 0x0`;
    `3M@0x598000` (the value it was built for) passes. Non-3M partitions are
    rejected by this SPL build; a working rootfs must fit 3 MB compressed.
+   *Superseded (increment 27+): the current image uses
+   `kernel=2560K@0x98000 rootfs=6M@0x318000` and boots; the 3 MB limit was
+   specific to the earlier tag/rootfs build.*
 4. **K-suffix bootinfo sizes are rejected**; `M`-suffix values pass tag
    validation (but the rootfs itself must still fit).
 5. The SPL appends its computed params to the cmdline at boot
@@ -75,10 +82,31 @@ Rootfs: thingino buildroot target → rsync to a staging dir → trim →
 Tag: SDK `tag_generator_t23_host --create` — **cmdline must not contain
 `rd_start`/`rd_size`**; bootinfo `kernel=5M@0x98000 rootfs=3M@0x598000`.
 
-## Known issues in the current minimal image
+## Current build (increment 42)
 
-- initrd `/dev` is empty → `can't open /dev/null` noise before mdev
-- `fw_printenv` and `etc/init.d/lib-serial-mac` were trimmed out (scripts
-  reference them)
-- No wifi (ATBM6461 ko + wpa_supplicant pending), no streaming (prudynt +
-  libimp pending), no persistent overlay (configs are RAM-only)
+Layout: `boot 256K@0`, `tag 352K@0x40000`, `kernel 2560K@0x98000`,
+`rootfs 6M@0x318000`, `recovery 2560K@0x918000`, `system 4000K@0xB98000`,
+`config 512K@0xF80000`.
+
+Base rootfs: thingino target
+`wansview_a1_t23zn_os02g10_atbm6461-3.10.14-uclibc`; overlay files in
+`rootfs-overlay/`. Rebuild:
+
+```sh
+scripts/build_rootfs_container.sh <rootfs-dir> <out.jzlzma> [sdk-lzma]
+scripts/assemble_increment.sh <base-16MiB-image> <out.jzlzma> <out.bin>
+```
+
+The container magic is **little-endian** (`struct.pack('<I', 0x27051956)`).
+`docs/WIFI_PROVISIONING.md` covers the WiFi/provisioning/overlay design and
+the increment-42 hardware evidence.
+
+## Known issues (increment 42)
+
+- `rvd` fails with `no ring after 5s`: `tx_isp_t23`, `sensor_os02g10_t23` and
+  `audio` are missing from `modules.dep` — next item for video.
+- WiFi is MCU-managed (stock ATBM6461 firmware); the host-managed
+  `wpa_supplicant` path is not used.
+- A mid-run AP→STA switch leaves the MCU datapath broken (only the MCU's own
+  stack answers). A clean STA boot forwards TCP/ICMP; provisioning ends with
+  an MCU reset for that reason.

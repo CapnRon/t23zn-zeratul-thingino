@@ -1,0 +1,14 @@
+#!/bin/sh
+mkdir -p /overlay /overlay/etc /overlay/root
+modprobe jz_sfc 2>/dev/null
+modprobe jffs2 2>/dev/null
+sleep 1
+if ! mount -t jffs2 /dev/mtdblock6 /overlay 2>/dev/null; then
+	flash_eraseall /dev/mtd6 2>/dev/null
+	mount -t jffs2 /dev/mtdblock6 /overlay 2>/dev/null
+fi
+if grep -q ' /overlay ' /proc/mounts 2>/dev/null; then
+	[ -d /overlay/etc ] && cp -a /overlay/etc/. /etc/ 2>/dev/null
+	[ -d /overlay/root ] && cp -a /overlay/root/. /root/ 2>/dev/null
+	echo "overlay: restored from /dev/mtdblock6"
+fi

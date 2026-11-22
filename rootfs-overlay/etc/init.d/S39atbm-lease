@@ -1,0 +1,102 @@
+#!/bin/sh
+IFACE=wlan0
+LEASE_FILE=/etc/atbm_lease
+STATUS=/usr/bin/atbm-status
+
+apply_lease() {
+	echo "ATBM: client mode lease $1 gw $2"
+	ip link set $IFACE up
+	ip addr flush dev $IFACE 2>/dev/null
+	ip addr add $1/24 dev $IFACE 2>/dev/null
+	ip route add default via $2 dev $IFACE 2>/dev/null
+	echo "nameserver $2" > /etc/resolv.conf
+	echo "nameserver 9.9.9.9" >> /etc/resolv.conf
+	killall uhttpd 2>/dev/null
+	sleep 1
+	/usr/bin/uhttpd -h /var/www -x /x -t 0 -T 15 -k 10 -n 20 -N 100 -s 443 -C /etc/ssl/certs/uhttpd.crt -K /etc/ssl/private/uhttpd.key -p 80 -E /x/legacy-url-recovery.cgi
+}
+
+save_lease() {
+	printf 'IP=%s\nGW=%s\n' "$1" "$2" > $LEASE_FILE
+	mkdir -p /overlay/etc 2>/dev/null
+	cp $LEASE_FILE /overlay/etc/atbm_lease 2>/dev/null
+}
+
+valid_ip() {
+	case "$1" in
+		'' | 0.0.0.0 | 172.16.0.* | 192.168.43.*) return 1 ;;
+	esac
+	return 0
+}
+
+read_status() {
+	ST_MODE=""
+	ST_CONN=""
+	ST_IP=""
+	ST_GW=""
+	out=$("$STATUS" 2>/dev/null) || return 1
+	[ -n "$out" ] || return 1
+	ST_MODE=$(echo "$out" | sed -n 's/^mode=//p')
+	ST_CONN=$(echo "$out" | sed -n 's/^connected=//p')
+	ST_IP=$(echo "$out" | sed -n 's/^ip=//p')
+	ST_GW=$(echo "$out" | sed -n 's/^gw=//p')
+	return 0
+}
+
+i=0
+fails=0
+while [ "$i" -lt 90 ]; do
+	if read_status; then
+		fails=0
+		[ $((i % 5)) -eq 0 ] && echo "ATBM: status mode=$ST_MODE conn=$ST_CONN ip=$ST_IP gw=$ST_GW"
+		if [ "$ST_MODE" = "STA" ] && [ "$ST_CONN" = "1" ] && valid_ip "$ST_IP"; then
+			GW="$ST_GW"
+			valid_ip "$GW" || GW=$(echo "$ST_IP" | sed 's/\.[0-9]*$/.1/')
+			save_lease "$ST_IP" "$GW"
+			apply_lease "$ST_IP" "$GW"
+			exit 0
+		fi
+		if [ "$ST_MODE" = "AP" ] && [ "$i" -ge 3 ]; then
+			echo "ATBM: MCU reports AP mode, starting portal"
+			break
+		fi
+	else
+		fails=$((fails + 1))
+		[ "$fails" -ge 15 ] && break
+	fi
+	i=$((i + 1))
+	sleep 1
+done
+
+# Fallback for drivers without ATBM_STATUS: wait for a client hostevent.
+if [ "$fails" -ge 15 ]; then
+	j=0
+	while [ "$j" -lt 60 ]; do
+		hx=$(dmesg | grep 'hostevent->bssid' | tail -1 | sed 's/.*ipaddr \([0-9a-fA-F]*\).*/\1/')
+		hx=$(printf '%08s' "$hx" 2>/dev/null | tr ' ' 0)
+		if [ ${#hx} -eq 8 ] && [ "$hx" != "00000000" ]; then
+			cand=$(printf '%d.%d.%d.%d' 0x${hx:6:2} 0x${hx:4:2} 0x${hx:2:2} 0x${hx:0:2})
+			case "$cand" in
+				172.16.0.* | 192.168.43.*) ;;
+				*)
+					GW=$(echo "$cand" | sed 's/\.[0-9]*$/.1/')
+					save_lease "$cand" "$GW"
+					apply_lease "$cand" "$GW"
+					exit 0
+					;;
+			esac
+		fi
+		j=$((j + 1))
+		sleep 1
+	done
+fi
+
+mac=$(cat /sys/class/net/$IFACE/address 2>/dev/null)
+last_two=$(echo "$mac" | awk -F: '{print $(NF-1) $NF}')
+ssid="THINGINO-${last_two}"
+echo "ATBM: provisioning AP $ssid"
+/usr/bin/atbm-ap "$ssid"
+/usr/bin/atbm-at "AT+WIFI_AP_IP_TMP=IP 172.16.0.2 NETMASK 255.255.255.0 GW 172.16.0.2"
+ip addr flush dev $IFACE 2>/dev/null
+ip addr add 172.16.0.1/24 dev $IFACE 2>/dev/null
+ip link set $IFACE up

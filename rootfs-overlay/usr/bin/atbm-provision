@@ -1,0 +1,120 @@
+#!/bin/sh
+SSID="$1"
+PASS="$2"
+IFACE=wlan0
+LEASE_FILE=/etc/atbm_lease
+STATUS=/usr/bin/atbm-status
+
+write_client_config() {
+	{
+		echo 'ctrl_interface=/run/wpa_supplicant'
+		echo 'ap_scan=2'
+		echo 'network={'
+		echo "	ssid=\"$SSID\""
+		if [ -n "$PASS" ]; then
+			echo "	psk=\"$PASS\""
+		else
+			echo '	key_mgmt=NONE'
+		fi
+		echo '}'
+	} > /etc/wpa_supplicant.conf
+}
+
+apply_lease() {
+	ip link set $IFACE up
+	ip addr flush dev $IFACE 2>/dev/null
+	ip addr add $1/24 dev $IFACE 2>/dev/null
+	ip route add default via $2 dev $IFACE 2>/dev/null
+	echo "nameserver $2" > /etc/resolv.conf
+	echo "nameserver 9.9.9.9" >> /etc/resolv.conf
+}
+
+start_portal_ap() {
+	mac=$(cat /sys/class/net/$IFACE/address 2>/dev/null)
+	last_two=$(echo "$mac" | awk -F: '{print $(NF-1) $NF}')
+	ap_ssid="THINGINO-${last_two}"
+	echo "ATBM: restoring provisioning AP $ap_ssid"
+	/usr/bin/atbm-ap "$ap_ssid" >/dev/null 2>&1
+	/usr/bin/atbm-at "AT+WIFI_AP_IP_TMP=IP 172.16.0.2 NETMASK 255.255.255.0 GW 172.16.0.2" >/dev/null 2>&1
+	ip addr flush dev $IFACE 2>/dev/null
+	ip addr add 172.16.0.1/24 dev $IFACE 2>/dev/null
+	ip link set $IFACE up
+	touch /run/portal_mode
+	/etc/init.d/S60uhttpd stop >/dev/null 2>&1
+	/etc/init.d/S60uhttpd start >/dev/null 2>&1
+}
+
+valid_ip() {
+	case "$1" in
+		'' | 0.0.0.0 | 172.16.0.* | 192.168.43.*) return 1 ;;
+	esac
+	return 0
+}
+
+read_status() {
+	ST_MODE=""
+	ST_CONN=""
+	ST_IP=""
+	ST_GW=""
+	out=$("$STATUS" 2>/dev/null) || return 1
+	[ -n "$out" ] || return 1
+	ST_MODE=$(echo "$out" | sed -n 's/^mode=//p')
+	ST_CONN=$(echo "$out" | sed -n 's/^connected=//p')
+	ST_IP=$(echo "$out" | sed -n 's/^ip=//p')
+	ST_GW=$(echo "$out" | sed -n 's/^gw=//p')
+	return 0
+}
+
+sleep 2
+# 1. Leave AP mode; this takes the provisioning AP down
+/usr/bin/atbm-at "AT+WIFI_SET_MODE=STA_MODE" >/dev/null 2>&1
+sleep 1
+# 2. Join the requested network
+/usr/bin/mcu_test --wifi_connect="$SSID:$PASS" >/dev/null 2>&1
+# 3. Wait for the MCU to report STA + connected + a client lease
+ip_addr=""
+gateway=""
+i=0
+while [ "$i" -lt 90 ]; do
+	if read_status && [ "$ST_MODE" = "STA" ] && [ "$ST_CONN" = "1" ] && valid_ip "$ST_IP"; then
+		ip_addr="$ST_IP"
+		gateway="$ST_GW"
+		valid_ip "$gateway" || gateway=$(echo "$ip_addr" | sed 's/\.[0-9]*$/.1/')
+		break
+	fi
+	if ! read_status; then
+		hx=$(dmesg | grep 'hostevent->bssid' | tail -1 | sed 's/.*ipaddr \([0-9a-fA-F]*\).*/\1/')
+		hx=$(printf '%08s' "$hx" 2>/dev/null | tr ' ' 0)
+		if [ ${#hx} -eq 8 ] && [ "$hx" != "00000000" ]; then
+			cand=$(printf '%d.%d.%d.%d' 0x${hx:6:2} 0x${hx:4:2} 0x${hx:2:2} 0x${hx:0:2})
+			case "$cand" in
+				172.16.0.* | 192.168.43.*) ;;
+				*)
+					ip_addr="$cand"
+					gateway=$(echo "$cand" | sed 's/\.[0-9]*$/.1/')
+					break
+					;;
+			esac
+		fi
+	fi
+	i=$((i + 1))
+	sleep 1
+done
+[ -n "$ip_addr" ] || {
+	start_portal_ap
+	exit 1
+}
+echo "ATBM: provisioned $ip_addr gw $gateway"
+apply_lease "$ip_addr" "$gateway"
+write_client_config
+printf 'IP=%s\nGW=%s\n' "$ip_addr" "$gateway" > $LEASE_FILE
+mkdir -p /overlay/etc 2>/dev/null
+cp $LEASE_FILE /overlay/etc/atbm_lease 2>/dev/null
+/usr/sbin/save-config 2>/dev/null
+sync
+# Reset the MCU via the ioctl tunnel; it also restarts the SoC, and the MCU
+# cold-boots STA and auto-joins the saved network.
+/usr/bin/atbm-at "AT+REBOOT" >/dev/null 2>&1
+sleep 5
+reboot
+exit 0
