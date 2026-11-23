@@ -24,10 +24,12 @@ piece.
 ## Repository layout
 
 ```
+Makefile        top-level build (image, kernel, sensor, tag, rootfs, flash)
 docs/           build notes, tag/SPL behavioral reference, pinned builds
 artifacts/      flashable images + kernel/rootfs payloads + tags (see hashes below)
 configs/        kernel config for pinned builds
 drivers/        Zeratul sensor drivers (os02g10 port)
+rootfs-overlay/ boot/provisioning/streamer config restored from the config partition
 scripts/        tag generation / image assembly helpers used in testing
 ```
 
@@ -71,6 +73,45 @@ scripts/        tag generation / image assembly helpers used in testing
 5. The SPL appends its computed params to the cmdline at boot
    (`lzo_size=0 rd_start=0x80600000 rd_size=<container orig>`); the vendor's
    runtime cmdline shows the same pattern.
+
+## Build from scratch (make)
+
+Prerequisites (not redistributed here — obtain them under their own terms):
+
+- Ingenic **Zeratul SDK 20230916** (`SDK_DIR`): kernel, toolchain, IMP libs, tag tools.
+- **thingino** buildroot target (`THINGINO_DIR`) for the rootfs base.
+- **Raptor + HAL + IPC + common + compy** at the pinned commits (`RAPTOR_DIR`).
+- The factory stock image for the SPL/base, or use the pinned image as the base.
+- `thingino-dfu`, `python3`, and the SDK `lzma` (for the container build).
+
+Quick image build from the committed pinned payloads — no SDK needed; this
+reproduces `artifacts/ZRT_increment75_os02g10_rsd5.bin` byte-for-byte:
+
+```sh
+make image                 # base + pinned tag/kernel/rootfs -> out/ZRT_custom.bin
+make verify                # check the artifact hashes
+make flash OUT=out/ZRT_custom.bin
+```
+
+Source builds (with the SDK / thingino / Raptor trees available):
+
+```sh
+make check SDK_DIR=... RAPTOR_DIR=...
+make sensor kernel SDK_DIR=... KERNEL_DIR=...
+make tag TAG_GENERATOR=... TAG_BASE=/path/to/factory_tag.bin
+make rootfs ROOTFS_STAGING=/path/to/thingino-rootfs
+make image KERNEL=out/uImage.jzlzma TAG=out/tag.bin ROOTFS=out/rootfs.jzlzma
+```
+
+The os02g10 driver is in `drivers/sensor-t23/zeratul/os02g10/`; the kernel
+config is `configs/kernel_increment75_os02g10.config`. `rootfs-overlay/` holds
+the boot/provisioning/streamer configuration; it contains **no credentials**
+(WiFi is provisioned via the portal or `/etc/wpa_supplicant.conf`).
+
+**Licensing/redistribution:** the Ingenic SDK, toolchain, IMP libraries and the
+ATBM6461 driver are proprietary and must not be vendored here; the thingino
+components are GPL. The SDK-derived artifacts are provided for this device
+only.
 
 ## Build procedure
 

@@ -77,6 +77,13 @@ U-Boot environment.
 
 ## 3. Rebuild recipe
 
+The repository `Makefile` wraps these steps. `make image` with the committed
+pinned payloads (`artifacts/kernel_increment75_…uImage.jzlzma`,
+`artifacts/rootfs_increment75_….cpio.jzlzma`, the tag) reproduces the pinned
+image byte-for-byte (verified: md5 `9a149caa…`). The source paths below are
+what the `make sensor/kernel/tag/rootfs` targets run with `SDK_DIR`,
+`KERNEL_DIR`, `TC`, `RAPTOR_DIR`, `ROOTFS_STAGING` set.
+
 ### 3.1 os02g10 sensor driver (Zeratul)
 
 The Zeratul kernel compiles sensor drivers **into the kernel** as
@@ -91,12 +98,12 @@ template. The committed source is already ported; the essential differences:
 - `get_sensor_name("os02g10")`, `get_sensor_i2c_addr(0x3c)`,
   `get_sensor_width/height`, `init_sensor`/`exit_sensor`
 
-Build with the SDK toolchain and install the hex:
+The repository `Makefile` in that directory takes `KDIR`/`KERNEL_DIR` and
+`CROSS_COMPILE`/`TC`:
 
 ```sh
-cd drivers/sensor-t23/zeratul/os02g10
-make CROSS_COMPILE=<sdk-toolchain>/bin/mips-linux-uclibc-
-make release   # -> <kernel>/arch/mips/xburst/lib/isp-t23/os02g10.hex
+make sensor KERNEL_DIR=<kernel> TC=<sdk-toolchain>/bin/mips-linux-uclibc-
+# -> <kernel>/arch/mips/xburst/lib/isp-t23/os02g10.hex
 ```
 
 ### 3.2 Kernel

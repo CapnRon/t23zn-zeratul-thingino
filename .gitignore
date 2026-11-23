@@ -1,0 +1,6 @@
+out/
+*.o
+*.cmd
+*.ko
+.tmp_versions/
+modules.order
