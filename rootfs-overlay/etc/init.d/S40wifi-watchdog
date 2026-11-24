@@ -1,0 +1,28 @@
+#!/bin/sh
+# WiFi auto-reconnect watchdog (ATBM6461) - starts the background loop
+
+case "$1" in
+	start)
+		if [ -x /usr/sbin/wifi-watchdog ]; then
+			/usr/sbin/wifi-watchdog >/dev/null 2>&1 &
+			echo "wifi-watchdog started"
+		fi
+		;;
+	stop)
+		if [ -f /var/run/wifi-watchdog.pid ]; then
+			kill "$(cat /var/run/wifi-watchdog.pid)" 2>/dev/null
+			sleep 1
+			kill -9 "$(cat /var/run/wifi-watchdog.pid)" 2>/dev/null
+			rm -f /var/run/wifi-watchdog.pid
+		fi
+		echo "wifi-watchdog stopped"
+		;;
+	restart)
+		"$0" stop
+		"$0" start
+		;;
+	*)
+		echo "usage: $0 {start|stop|restart}"
+		exit 1
+		;;
+esac

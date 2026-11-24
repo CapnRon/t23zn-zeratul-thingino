@@ -1,0 +1,86 @@
+#!/bin/sh
+# ATBM6461 WiFi auto-reconnect watchdog
+#
+# Layered recovery, no relay and no GPIO3 main-power cycle required:
+#   1) ATBM STA re-associate (mcu_test --wifi_connect)
+#   2) S38 restart (bring wlan0 up / reapply IP)
+#   3) atbm6461_wifi_sdio SDIO driver reload
+#   4) SoC reboot (ATBM/MCU stays powered, so this is not a "full shutdown")
+#
+# The ATBM6461 (the "MCU") survives all of the above; only a main-power
+# cycle resets it. The recent failure was the ATBM WiFi link dying while
+# the MCU stayed alive, so the SoC reboot alone is the last resort.
+
+CONF=/etc/wpa_supplicant.conf
+LOG=/var/log/wifi-watchdog.log
+STATE=/var/run/wifi-watchdog.fail
+PIDFILE=/var/run/wifi-watchdog.pid
+GW=192.168.2.1
+MOD=atbm6461_wifi_sdio
+INTERVAL=20
+
+mkdir -p /var/log
+echo $$ >"$PIDFILE"
+
+ssid=$(sed -n 's/^[[:space:]]*ssid="\([^"]*\)".*/\1/p' "$CONF" 2>/dev/null | head -1)
+psk=$(sed -n 's/^[[:space:]]*psk="\([^"]*\)".*/\1/p' "$CONF" 2>/dev/null | head -1)
+
+log() { echo "$(date '+%F %T') $*" >>"$LOG"; }
+up() { ping -c1 -W2 "$GW" >/dev/null 2>&1; }
+
+if [ -z "$ssid" ]; then
+	log "no ssid configured; watchdog idle"
+	exit 0
+fi
+
+log "watchdog started (ssid=$ssid, interval=${INTERVAL}s)"
+
+while :; do
+	f=0
+	[ -f "$STATE" ] && f=$(cat "$STATE" 2>/dev/null || echo 0)
+
+	if up; then
+		[ "${f:-0}" != 0 ] && log "link recovered (was fail=$f)"
+		echo 0 >"$STATE"
+		sleep "$INTERVAL"
+		continue
+	fi
+
+	f=$((f+1))
+	echo "$f" >"$STATE"
+	log "link down (fail=$f)"
+
+	case "$f" in
+	2)
+		log "recover[1/4]: ATBM STA re-associate"
+		mcu_test --wifi_connect="$ssid:$psk" >/dev/null 2>&1
+		sleep 6
+		;;
+	3)
+		log "recover[2/4]: S38 restart"
+		/etc/init.d/S38wpa_supplicant restart >/dev/null 2>&1
+		sleep 8
+		;;
+	4|5)
+		log "recover[3/4]: reload $MOD"
+		rmmod "$MOD" 2>/dev/null
+		sleep 3
+		ko=$(find /lib/modules -name "${MOD}.ko" 2>/dev/null | head -1)
+		if [ -n "$ko" ]; then
+			insmod "$ko" 2>/dev/null
+		fi
+		sleep 3
+		/etc/init.d/S38wpa_supplicant restart >/dev/null 2>&1
+		sleep 8
+		;;
+	*)
+		if [ "$f" -ge 7 ]; then
+			log "recover[4/4]: rebooting SoC (ATBM/MCU stays powered)"
+			sync
+			reboot
+		fi
+		;;
+	esac
+
+	sleep "$INTERVAL"
+done
