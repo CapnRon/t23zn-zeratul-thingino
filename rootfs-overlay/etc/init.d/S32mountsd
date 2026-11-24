@@ -1,0 +1,65 @@
+#!/bin/sh
+# S32mountsd -- mount the recording SD card after Raptor has started.
+
+MNT=/mnt/mmcblk0p1
+LOG=/var/log/boot-timing.log
+
+log() {
+	mkdir -p /var/log
+	awk '{printf "%.3f ", $1}' /proc/uptime >> "$LOG"
+	echo "mountsd: $*" >> "$LOG"
+}
+
+start() {
+	log "begin"
+	mkdir -p "$MNT"
+	modprobe mmc_block 2>/dev/null || true
+
+	i=0
+	while [ "$i" -lt 50 ]; do
+		if grep -q " $MNT " /proc/mounts; then
+			mkdir -p "$MNT/raptor"
+			log "already mounted at $MNT"
+			return 0
+		fi
+		for dev in /dev/mmcblk0p1 /dev/mmcblk1p1; do
+			[ -b "$dev" ] || continue
+			if grep -q " $MNT " /proc/mounts; then
+				mkdir -p "$MNT/raptor"
+				log "mounted by hotplug at $MNT"
+				return 0
+			fi
+			for fstype in exfat vfat; do
+				if mount -t "$fstype" -o rw,noatime "$dev" "$MNT"; then
+					mkdir -p "$MNT/raptor"
+					log "mounted $dev ($fstype) at $MNT"
+					sync
+					return 0
+				fi
+			done
+		done
+		usleep 100000
+		i=$((i + 1))
+	done
+
+	log "no usable SD card"
+	return 0
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		true
+		;;
+	restart)
+		start
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}" >&2
+		exit 1
+		;;
+esac
+
+exit 0

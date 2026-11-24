@@ -1,0 +1,40 @@
+#!/bin/sh
+# F00raptor -- start the video producer before rcS and the network stack.
+
+LOG=/var/log/boot-timing.log
+
+log() {
+	mkdir -p /var/log
+	awk '{printf "%.3f ", $1}' /proc/uptime >> "$LOG"
+	echo "f00raptor: $*" >> "$LOG"
+}
+
+start() {
+	grep -q ' /dev ' /proc/mounts || mount -t devtmpfs devtmpfs /dev 2>/dev/null
+	mkdir -p /dev/shm /tmp
+	grep -q ' /dev/shm ' /proc/mounts || mount -t tmpfs -o mode=1777 tmpfs /dev/shm 2>/dev/null
+	grep -q ' /tmp ' /proc/mounts || mount -t tmpfs -o mode=1777 tmpfs /tmp 2>/dev/null
+	chmod 1777 /dev/shm /tmp 2>/dev/null
+
+	log "starting rvd"
+	/etc/init.d/S31raptor early || true
+	log "rvd handoff done"
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		true
+		;;
+	restart)
+		start
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}" >&2
+		exit 1
+		;;
+esac
+
+exit 0

@@ -1,0 +1,45 @@
+#!/bin/sh
+# S33rmr -- start recording after the SD card is mounted by S32mountsd.
+
+CONF=/etc/raptor.conf
+LOG=/var/log/boot-timing.log
+
+log() {
+	mkdir -p /var/log
+	awk '{printf "%.3f ", $1}' /proc/uptime >> "$LOG"
+	echo "rmr: $*" >> "$LOG"
+}
+
+start() {
+	mkdir -p /mnt/mmcblk0p1/raptor 2>/dev/null || true
+	if [ ! -d /mnt/mmcblk0p1/raptor ]; then
+		log "no storage, rmr not started"
+		return 0
+	fi
+	if pidof rmr >/dev/null 2>&1; then
+		log "already running"
+		return 0
+	fi
+	start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
+	log "started"
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		killall rmr 2>/dev/null || true
+		;;
+	restart)
+		killall rmr 2>/dev/null || true
+		sleep 1
+		start
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}" >&2
+		exit 1
+		;;
+esac
+
+exit 0
