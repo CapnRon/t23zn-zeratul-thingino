@@ -38,11 +38,28 @@ start() {
 	fi
 
 	mkdir -p "$MNT/raptor"
+
+	# Move the pre-SD RAM segment onto the card, then continue on SD.
+	if pidof rmr >/dev/null 2>&1; then
+		killall rmr 2>/dev/null || true
+		i=0
+		while pidof rmr >/dev/null 2>&1 && [ "$i" -lt 30 ]; do
+			sleep 0.1
+			i=$((i + 1))
+		done
+		if pidof rmr >/dev/null 2>&1; then
+			killall -9 rmr 2>/dev/null || true
+		fi
+		if [ -d /dev/shm/raptor ]; then
+			cp -a /dev/shm/raptor/. "$MNT/raptor/" 2>/dev/null || true
+			sync
+		fi
+		log "RAM segment migrated"
+	fi
+
 	if ! pidof rmr >/dev/null 2>&1; then
 		start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
-		log "rmr started"
-	else
-		log "rmr already running"
+		log "rmr SD started"
 	fi
 }
 
