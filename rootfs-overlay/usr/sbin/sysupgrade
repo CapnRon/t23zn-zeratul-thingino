@@ -261,7 +261,7 @@ flush_memory() {
 }
 
 show_help() {
-	echo -e "Usage: $0 [-x] [-f|-p|<file>|<URL>]
+	echo -e "Usage: $0 [-x] [-f|-b|<file>|<URL>]
 Where:
   -f      full upgrade with a binary from GitHub
   -b      upgrade only bootloader
