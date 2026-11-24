@@ -17,7 +17,7 @@ fi
 GEN=$1
 BASE=$2
 OUT=$3
-ENV=${4:-senv;[HW];init_vw=1920;init_vh=1080;nrvbs=1;[IR];ir_mode=auto;ir_led=auto;[AUDIO];mic=on;[VIDEO];antiflicker=2;flip=off;[IVS];sense=3;clip_length=10;retrigger_time=30;[IOT];ZONE=Asia/Hong_Kong;TZ=HKT-8;fac=0;[DEV];device_type=4;[PMODE];pmode=1;[WIFI];SSID2=;PASS2=;eenv;
+ENV=${4:-senv;[HW];init_vw=1920;init_vh=1080;nrvbs=1;[IR];ir_mode=auto;ir_led=auto;[AUDIO];mic=on;[VIDEO];antiflicker=2;flip=off;[IVS];sense=3;clip_length=10;retrigger_time=30;[IOT];ZONE=Asia/Hong_Kong;TZ=HKT-8;fac=0;[DEV];device_type=4;[PMODE];pmode=1;[WIFI];SSID2=;PASS2=;eenv;}
 CMDLINE=${5:-console=ttyS1,115200n8 mem=36M@0x0 rmem=28M@0x2400000 root=/dev/ram0 rw rdinit=/linuxrc mtdparts=jz_sfc:256K(boot),352K(tag),2560K(kernel),5M(rootfs),2560K(recovery),672K(common),4M(system),768K(config),16M@0(all) lpj=6955008 quiet}
 
 cp -f "$BASE" "$OUT"

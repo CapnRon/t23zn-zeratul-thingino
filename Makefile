@@ -41,13 +41,21 @@ KERNEL     ?= artifacts/kernel_increment75_os02g10.uImage.jzlzma
 ROOTFS     ?= artifacts/rootfs_increment75_thingino_raptor5.cpio.jzlzma
 
 # Tag env/cmdline used by `make tag`
-TAG_CMDLINE ?= console=ttyS1,115200n8 mem=36M@0x0 rmem=28M@0x2400000 root=/dev/ram0 rw rdinit=/linuxrc mtdparts=jz_sfc:256K(boot),352K(tag),2560K(kernel),5M(rootfs),2560K(recovery),672K(common),4M(system),768K(config),16M@0(all) lpj=6955008 quiet
+TAG_CMDLINE ?= console=ttyS1,115200n8 mem=36M@0x0 rmem=28M@0x2400000 root=/dev/ram0 rw rdinit=/linuxrc mtdparts=jz_sfc:256K(boot),352K(tag),2560K(kernel),5M(rootfs),8096K(data),16M@0(all) lpj=6955008 quiet
+TAG_BASE    ?= artifacts/tag_os02g10_1920_rmem28.bin
+DATA_ROOT   ?= data-overlay
+DATA_SIZE   ?= 0x7e8000
+DATA        ?= $(OUT_DIR)/data.jffs2
+OVERLAY_TAG    ?= $(OUT_DIR)/tag.bin
+OVERLAY_KERNEL ?= $(OUT_DIR)/uImage.jzlzma
+OVERLAY_ROOTFS ?= $(OUT_DIR)/rootfs.jzlzma
+OVERLAY_OUT    ?= $(OUT_DIR)/ZRT_overlay.bin
 TAG_ENV     ?= senv;[HW];init_vw=1920;init_vh=1080;nrvbs=1;[IR];ir_mode=auto;ir_led=auto;[AUDIO];mic=on;[VIDEO];antiflicker=2;flip=off;[IVS];sense=3;clip_length=10;retrigger_time=30;[IOT];ZONE=Asia/Hong_Kong;TZ=HKT-8;fac=0;[DEV];device_type=4;[PMODE];pmode=1;[WIFI];SSID2=;PASS2=;eenv;
 
 OUT_DIR ?= out
 OUT     ?= $(OUT_DIR)/ZRT_custom.bin
 
-.PHONY: all image flash verify check sensor kernel tag rootfs clean
+.PHONY: all image overlay-image data flash verify check sensor kernel tag rootfs clean
 
 all: image
 
@@ -85,6 +93,9 @@ sensor:
 kernel:
 	@test -d "$(KERNEL_DIR)" || { echo "ERROR: set KERNEL_DIR=/path/to/kernel"; exit 1; }
 	@test -x "$(TC)gcc" || { echo "ERROR: set TC=/path/to/toolchain-prefix"; exit 1; }
+	@if [ ! -d "$(KERNEL_DIR)/fs/overlayfs" ]; then \
+		patch -d "$(KERNEL_DIR)" -p1 < "$(CURDIR)/patches/thingino-3.10-overlayfs-v18.patch"; \
+	fi
 	cp -f configs/kernel_increment75_os02g10.config "$(KERNEL_DIR)/.config"
 	$(MAKE) -C "$(KERNEL_DIR)" ARCH=mips CROSS_COMPILE="$(TC)" olddefconfig
 	$(MAKE) -C "$(KERNEL_DIR)" ARCH=mips CROSS_COMPILE="$(TC)" \
@@ -116,6 +127,14 @@ image:
 	@mkdir -p "$(OUT_DIR)"
 	scripts/assemble_factory_image.sh "$(BASE_IMAGE)" "$(TAG)" "$(KERNEL)" "$(ROOTFS)" "$(OUT)"
 	@ls -la "$(OUT)"
+
+data:
+	@mkdir -p "$(OUT_DIR)"
+	scripts/build_data_jffs2.sh "$(DATA_ROOT)" "$(DATA)" "$(DATA_SIZE)"
+
+overlay-image: data
+	@mkdir -p "$(OUT_DIR)"
+	scripts/assemble_overlay_data_image.sh "$(BASE_IMAGE)" "$(OVERLAY_TAG)" "$(OVERLAY_KERNEL)" "$(OVERLAY_ROOTFS)" "$(DATA)" "$(OVERLAY_OUT)"
 
 flash:
 	@test -f "$(OUT)" || { echo "ERROR: $(OUT) not found (make image first)"; exit 1; }

@@ -1,14 +1,4 @@
 #!/bin/sh
-mkdir -p /overlay /overlay/etc /overlay/root
-modprobe jz_sfc 2>/dev/null
-modprobe jffs2 2>/dev/null
-sleep 1
-if ! mount -t jffs2 /dev/mtdblock7 /overlay 2>/dev/null; then
-	flash_eraseall /dev/mtd7 2>/dev/null
-	mount -t jffs2 /dev/mtdblock7 /overlay 2>/dev/null
-fi
-if grep -q ' /overlay ' /proc/mounts 2>/dev/null; then
-	[ -d /overlay/etc ] && cp -a /overlay/etc/. /etc/ 2>/dev/null
-	[ -d /overlay/root ] && cp -a /overlay/root/. /root/ 2>/dev/null
-	echo "overlay: restored from /dev/mtdblock7"
-fi
+# The data partition is the overlay upper; the old config-partition
+# copy-restore layer is intentionally disabled.
+exit 0

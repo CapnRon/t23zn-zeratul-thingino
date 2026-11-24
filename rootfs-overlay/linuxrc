@@ -1,0 +1,34 @@
+#!/bin/sh
+# Zeratul hybrid PID 1: mount the data partition, switch to a legacy
+# overlayfs root, and chroot into it. No pivot_root/switch_root: the
+# initramfs must remain as the overlay lower layer.
+
+mount -t proc proc /proc 2>/dev/null
+mount -t sysfs sysfs /sys 2>/dev/null
+if [ ! -e /dev/mtdblock0 ]; then
+	mount -t devtmpfs devtmpfs /dev 2>/dev/null
+fi
+modprobe jz_sfc 2>/dev/null || true
+modprobe mtdblock 2>/dev/null || true
+
+data_dev=$(awk '$4 ~ /"data"/ {gsub(":", "", $1); print $1}' /proc/mtd)
+if [ -n "$data_dev" ]; then
+	data_block="/dev/mtdblock${data_dev#mtd}"
+	mkdir -p /data
+	if mount -t jffs2 "$data_block" /data 2>/dev/null; then
+		mkdir -p /data/root /newroot
+		if mount -t overlayfs -o noatime,lowerdir=/,upperdir=/data/root overlay /newroot 2>/dev/null; then
+			mkdir -p /newroot/data
+			mount --bind /data /newroot/data 2>/dev/null
+
+			for d in dev proc sys run; do
+				[ -d /newroot/$d ] || mkdir -p /newroot/$d
+				mount --move /$d /newroot/$d 2>/dev/null || true
+			done
+
+			exec chroot /newroot /sbin/init
+		fi
+	fi
+fi
+
+exec /sbin/init
