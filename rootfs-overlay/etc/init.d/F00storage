@@ -1,0 +1,67 @@
+#!/bin/sh
+# F00storage -- mount the recording card and start rmr before rcS networking.
+
+MNT=/mnt/mmcblk0p1
+CONF=/etc/raptor.conf
+LOG=/var/log/boot-timing.log
+
+log() {
+	mkdir -p /var/log
+	awk '{printf "%.3f ", $1}' /proc/uptime >> "$LOG"
+	echo "f00storage: $*" >> "$LOG"
+}
+
+start() {
+	mkdir -p "$MNT"
+
+	i=0
+	while [ "$i" -lt 50 ]; do
+		if grep -q " $MNT " /proc/mounts; then
+			break
+		fi
+		for dev in /dev/mmcblk0p1 /dev/mmcblk1p1; do
+			[ -b "$dev" ] || continue
+			for fstype in exfat vfat; do
+				if mount -t "$fstype" -o rw,noatime "$dev" "$MNT"; then
+					log "mounted $dev ($fstype) at $MNT"
+					break 2
+				fi
+			done
+		done
+		usleep 100000
+		i=$((i + 1))
+	done
+
+	if ! grep -q " $MNT " /proc/mounts; then
+		log "no SD card"
+		return 0
+	fi
+
+	mkdir -p "$MNT/raptor"
+	if ! pidof rmr >/dev/null 2>&1; then
+		start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
+		log "rmr started"
+	else
+		log "rmr already running"
+	fi
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		killall rmr 2>/dev/null || true
+		;;
+	restart)
+		killall rmr 2>/dev/null || true
+		sleep 1
+		start
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}" >&2
+		exit 1
+		;;
+esac
+
+exit 0
