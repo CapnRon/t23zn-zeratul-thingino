@@ -15,6 +15,11 @@ log() {
 now() {
 	cut -d. -f1 /proc/uptime
 }
+
+if [ "${ENABLED:-1}" != "1" ]; then
+	log "disabled by pwrman.conf"
+	exit 0
+fi
 count_clients() {
 	total=0
 	for p in $COUNT_PORTS; do
