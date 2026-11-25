@@ -1,0 +1,78 @@
+#!/bin/sh
+
+CONF=/etc/pwrman.conf
+[ -r "$CONF" ] && . "$CONF"
+
+MCU=${MCU:-$(command -v mcu_test 2>/dev/null || echo /usr/bin/mcu_test)}
+SLEEP=/usr/bin/pwrman-sleep
+LOG=/data/root/pwrman.log
+RUN=/run/pwrman
+
+mkdir -p "$RUN" /data/root
+log() {
+	printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG"
+}
+now() {
+	cut -d. -f1 /proc/uptime
+}
+count_clients() {
+	total=0
+	for p in $COUNT_PORTS; do
+		n=$(awk -v p="$p" 'NR>1 && $4=="01" { split($2,a,":"); if (a[2]==p) c++ } END { print c+0 }' /proc/net/tcp /proc/net/tcp6 2>/dev/null)
+		total=$((total + n))
+	done
+	echo "$total"
+}
+
+if [ ! -x "$MCU" ]; then
+	log "mcu_test missing; power management disabled"
+	exit 1
+fi
+if [ ! -x "$SLEEP" ]; then
+	log "pwrman-sleep missing; power management disabled"
+	exit 1
+fi
+
+mkdir -p "$RUN"
+echo $$ > "$RUN/pwrman.pid"
+touch "$RUN/activity"
+start=$(now)
+last=$start
+log "start: min_awake=$MIN_AWAKE idle_timeout=$IDLE_TIMEOUT"
+
+if ! "$MCU" --pir_enable >/dev/null 2>&1; then
+	log "PIR enable failed; refusing automatic poweroff"
+	exit 1
+fi
+log "PIR enabled"
+
+while :; do
+	cur=$(now)
+	pir=$("$MCU" --dpir_get_status 2>/dev/null | sed -n 's/.*dpir_status = \([0-9][0-9]*\).*/\1/p')
+	if [ "$pir" = "1" ]; then
+		"$MCU" --dpir_clr_interrupt >/dev/null 2>&1 || true
+		last=$cur
+		log "PIR activity"
+	fi
+
+	if [ -f "$RUN/hold" ]; then
+		last=$cur
+	fi
+
+	clients=$(count_clients)
+	if [ "$clients" -gt 0 ]; then
+		last=$cur
+	fi
+
+	awake=$((cur - start))
+	idle=$((cur - last))
+	if [ "$awake" -ge "$MIN_AWAKE" ] && [ "$idle" -ge "$IDLE_TIMEOUT" ]; then
+		log "sleeping: awake=${awake}s idle=${idle}s clients=$clients"
+		"$SLEEP"
+		rc=$?
+		log "sleep attempt returned rc=$rc"
+		last=$(now)
+	fi
+
+	sleep "$CHECK_INTERVAL"
+done

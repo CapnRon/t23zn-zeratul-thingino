@@ -1,0 +1,30 @@
+#!/bin/sh
+
+PIDFILE=/run/pwrman/pwrman.pid
+DAEMON=/usr/bin/pwrman
+
+start() {
+	[ -x "$DAEMON" ] || return 0
+	mkdir -p /run/pwrman
+	if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+		return 0
+	fi
+	"$DAEMON" >/dev/null 2>&1 &
+	echo $! > "$PIDFILE"
+}
+
+stop() {
+	[ -f "$PIDFILE" ] || return 0
+	pid=$(cat "$PIDFILE")
+	kill "$pid" 2>/dev/null || true
+	rm -f "$PIDFILE"
+}
+
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	restart) stop; start ;;
+	*) echo "Usage: $0 {start|stop|restart}" >&2; exit 1 ;;
+esac
+
+exit 0
