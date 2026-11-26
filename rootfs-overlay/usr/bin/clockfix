@@ -14,7 +14,7 @@ boot_id=$(cat "$BOOT_ID" 2>/dev/null)
 case "$sync_utc$sync_up" in ''|*[!0-9]*) exit 0 ;; esac
 
 sleep 90
-now=$(cut -d. -f1 /proc/uptime)
+now=$(date +%s)
 
 while IFS='|' read -r entry_boot path clip_up; do
 	[ -n "$entry_boot" ] || continue
@@ -44,7 +44,7 @@ while IFS='|' read -r entry_boot path clip_up; do
 done < "$JOURNAL"
 sync
 sleep 30
-now=$(cut -d. -f1 /proc/uptime)
+now=$(date +%s)
 while IFS='|' read -r entry_boot path clip_up; do
 	[ -n "$entry_boot" ] || continue
 	[ "$entry_boot" = "$boot_id" ] || continue
