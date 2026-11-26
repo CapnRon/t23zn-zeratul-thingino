@@ -1,4 +1,0 @@
-kernel/drivers/mtd/devices/jz_sfc.ko:
-fs/jffs2/jffs2.ko:
-kernel/drivers/mmc/host/jzmmc_v12.ko:
-extra/atbm6461_wifi_sdio.ko:
