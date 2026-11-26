@@ -15,7 +15,11 @@ start() {
 	log "s09 chain start"
 	/etc/init.d/S09mmc start >>"$LOG" 2>&1 || log "S09 failed"
 	modprobe mmc_block 2>/dev/null || log "mmc_block load failed"
-	log "s09 chain done"
+	if [ -e /run/s09.done ]; then
+		log "s09 chain done; wdt disabled"
+	else
+		log "s09 chain done; WDT NOT disabled"
+	fi
 }
 
 case "$1" in
