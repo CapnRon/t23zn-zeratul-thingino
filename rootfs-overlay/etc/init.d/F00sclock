@@ -1,0 +1,9 @@
+#!/bin/sh
+# Start non-blocking MCU/NTP clock service after recorder starts.
+case "$1" in
+	start) [ -x /usr/bin/clock-service ] && /usr/bin/clock-service & ;;
+	stop) true ;;
+	restart) [ -x /usr/bin/clock-service ] && /usr/bin/clock-service & ;;
+	*) echo "Usage: $0 {start|stop|restart}" >&2; exit 1 ;;
+esac
+exit 0
