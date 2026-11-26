@@ -10,6 +10,7 @@ log() {
 }
 
 start() {
+	[ -e /run/clock.ready ] && return 0
 	[ -x /usr/bin/atbm-time ] || return 0
 	[ -e /dev/atbm_ioctl ] || {
 		log "atbm ioctl missing"
