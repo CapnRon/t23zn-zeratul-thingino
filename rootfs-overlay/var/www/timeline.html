@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>thingino · Recordings</title>
+  <script src="/a/theme-init.js"></script>
+  <link rel="icon" type="image/svg+xml" href="/a/favicon.svg">
+  <link rel="stylesheet" href="/a/vendor/montserrat.css">
+  <link rel="stylesheet" href="/a/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="/a/vendor/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/a/main.css">
+  <style>
+    #timeline-shell { position: relative; }
+    .timeline-toolbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+    .timeline-day { position: relative; height: 84px; margin-top: .75rem;
+      background: #111820; border: 1px solid #2a3642; border-radius: .5rem; overflow: hidden; }
+    .timeline-tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid #26313c;
+      color: #8fa3b5; font-size: .7rem; padding-left: .25rem; pointer-events: none; }
+    .timeline-segment { position: absolute; top: 28px; height: 38px; min-width: 3px;
+      background: #2f81f7; border: 1px solid #62a4ff; border-radius: 3px;
+      cursor: pointer; opacity: .9; }
+    .timeline-segment:hover, .timeline-segment.active { background: #f0a020; border-color: #ffd479; opacity: 1; }
+    .timeline-segment.live { background: #3fb950; border-color: #7ee787; }
+    .timeline-ruler-label { position: absolute; bottom: 3px; color: #8fa3b5; font-size: .68rem; }
+    .timeline-empty { position: absolute; inset: 0; display: grid; place-items: center;
+      color: #8fa3b5; font-size: .9rem; }
+    #player { background: #000; width: 100%; max-height: 58vh; }
+    .recording-meta { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+
+<body id="page-timeline">
+<nav data-app-nav></nav>
+
+<main class="pb-4">
+  <div class="container" style="min-height:80vh">
+    <div data-app-controls></div>
+
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+      <div>
+        <h1 class="h3 mb-1">Recordings</h1>
+        <p class="text-secondary mb-0">Local timeline from the rolling SD card archive. No live stream.</p>
+      </div>
+      <div class="timeline-toolbar">
+        <div>
+          <label class="form-label small mb-1" for="timelineDate">Day</label>
+          <input class="form-control form-control-sm" type="date" id="timelineDate">
+        </div>
+        <div>
+          <label class="form-label small mb-1" for="timelineTz">Timezone</label>
+          <select class="form-select form-select-sm" id="timelineTz"></select>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" id="timelineRefresh" type="button">
+          <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span id="timelineSummary">Loading recordings…</span>
+        <span class="small text-secondary" id="timelineClock"></span>
+      </div>
+      <div class="card-body">
+        <div id="timeline-shell">
+          <div class="timeline-day" id="timelineDay">
+            <div class="timeline-empty" id="timelineEmpty">No recordings for this day.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Playback</span>
+        <span class="small text-secondary recording-meta" id="playerLabel">Select a segment</span>
+      </div>
+      <div class="card-body p-0">
+        <video id="player" controls playsinline preload="metadata"></video>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer data-app-footer></footer>
+
+<script src="/a/vendor/bootstrap.bundle.min.js"></script>
+<script src="/a/main.js"></script>
+<script src="/a/runtime-config.js"></script>
+<script src="/a/control-bar.js"></script>
+<script src="/a/navigation.js"></script>
+<script src="/a/footer.js"></script>
+<script src="/a/timeline.js?v=20261125"></script>
+</body>
+</html>
