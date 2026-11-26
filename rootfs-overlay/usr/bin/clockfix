@@ -18,15 +18,14 @@ now=$(cut -d. -f1 /proc/uptime)
 
 while IFS='|' read -r entry_boot path clip_up; do
 	[ -n "$entry_boot" ] || continue
-	case "$path" in /dev/shm/raptor/*) continue ;; esac
 	[ "$entry_boot" = "$boot_id" ] || continue
 	case "$clip_up" in ''|*[!0-9]*) continue ;; esac
 	[ "$clip_up" -le "$sync_up" ] || continue
-
-	if [ ! -f "$path" ]; then
+	case "$path" in /dev/shm/raptor/*)
 		base=${path##*/}
 		path=$(find /mnt/mmcblk0p1/raptor -type f -name "$base" 2>/dev/null | head -1)
-	fi
+		;;
+	esac
 	[ -n "$path" ] && [ -f "$path" ] || continue
 
 	mtime=$(stat -c %Y "$path" 2>/dev/null)
@@ -48,11 +47,15 @@ sleep 30
 now=$(cut -d. -f1 /proc/uptime)
 while IFS='|' read -r entry_boot path clip_up; do
 	[ -n "$entry_boot" ] || continue
-	case "$path" in /dev/shm/raptor/*) continue ;; esac
 	[ "$entry_boot" = "$boot_id" ] || continue
 	case "$clip_up" in ''|*[!0-9]*) continue ;; esac
 	[ "$clip_up" -le "$sync_up" ] || continue
-	[ -f "$path" ] || continue
+	case "$path" in /dev/shm/raptor/*)
+		base=${path##*/}
+		path=$(find /mnt/mmcblk0p1/raptor -type f -name "$base" 2>/dev/null | head -1)
+		;;
+	esac
+	[ -n "$path" ] && [ -f "$path" ] || continue
 	mtime=$(stat -c %Y "$path" 2>/dev/null)
 	[ -n "$mtime" ] && [ "$mtime" -ge "$((now - 5))" ] && continue
 	true_utc=$((sync_utc - (sync_up - clip_up)))
@@ -68,3 +71,5 @@ while IFS='|' read -r entry_boot path clip_up; do
 done < "$JOURNAL"
 sync
 exit 0
+
+find /mnt/mmcblk0p1/raptor -type d -empty -name "1970-01-01" -delete 2>/dev/null || true
