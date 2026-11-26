@@ -23,9 +23,12 @@
     .timeline-segment:hover, .timeline-segment.active { background: #f0a020; border-color: #ffd479; opacity: 1; }
     .timeline-segment.live { background: #3fb950; border-color: #7ee787; }
     .timeline-ruler-label { position: absolute; bottom: 3px; color: #8fa3b5; font-size: .68rem; }
+    .timeline-playhead { position: absolute; top: 0; bottom: 0; width: 2px; display: none;
+      background: #ffd479; box-shadow: 0 0 5px #ffd479; pointer-events: none; z-index: 5; }
     .timeline-empty { position: absolute; inset: 0; display: grid; place-items: center;
       color: #8fa3b5; font-size: .9rem; }
     #player { background: #000; width: 100%; max-height: 58vh; }
+    .timeline-day { touch-action: none; }
     .recording-meta { font-variant-numeric: tabular-nums; }
   </style>
 </head>

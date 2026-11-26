@@ -18,6 +18,13 @@
   let segments = [];
   let selected = null;
   let objectUrl = "";
+  let loadToken = 0;
+  let scrubbing = false;
+  let scrubTarget = 0;
+  let suppressClickUntil = 0;
+  const playhead = document.createElement("div");
+  playhead.className = "timeline-playhead";
+  dayEl.appendChild(playhead);
 
   function pad(n) { return String(n).padStart(2, "0"); }
 
@@ -103,16 +110,51 @@
       el.style.left = `${left}%`;
       el.style.width = `${width}%`;
       el.title = `${fmtTime(s.start)} · ${s.path}`;
-      el.addEventListener("click", () => playSegment(s));
+      el.addEventListener("click", () => {
+        if (Date.now() < suppressClickUntil) return;
+        playSegment(s);
+      });
       dayEl.appendChild(el);
     });
 
     setEmpty(todays.length === 0);
+    updatePlayhead();
     const mb = todays.reduce((n, s) => n + Number(s.size || 0), 0) / 1048576;
     summaryEl.textContent = `${todays.length} segment${todays.length === 1 ? "" : "s"} · ${mb.toFixed(1)} MB`;
   }
 
-  async function playSegment(s) {
+  function setPlayhead(absMs) {
+    if (!selected && !absMs) { playhead.style.display = "none"; return; }
+    if (!dateEl.value) { playhead.style.display = "none"; return; }
+    const dayStart = startOfLocalDay(dateEl.value);
+    const pct = ((absMs - dayStart) / DAY_MS) * 100;
+    if (pct < 0 || pct > 100) { playhead.style.display = "none"; return; }
+    playhead.style.display = "block";
+    playhead.style.left = pct + "%";
+  }
+
+  function updatePlayhead() {
+    if (!selected) { playhead.style.display = "none"; return; }
+    setPlayhead(selected.start + (player.currentTime || 0) * 1000);
+  }
+
+  function segmentAt(absMs) {
+    let previous = null;
+    for (const s of segments) {
+      if (absMs >= s.start && absMs < s.end) return s;
+      if (s.start <= absMs) previous = s;
+    }
+    return previous || segments[0] || null;
+  }
+
+  function timeFromPointer(event) {
+    const rect = dayEl.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    return startOfLocalDay(dateEl.value) + ratio * DAY_MS;
+  }
+
+  async function playSegment(s, offsetSec = 0, autoplay = true) {
+    const token = ++loadToken;
     selected = s;
     const label = `${fmtTime(s.start)} · ${fmtOffset(offset)}`;
     playerLabel.textContent = `Loading ${s.path.split("/").slice(-2).join("/")}…`;
@@ -121,15 +163,74 @@
       const response = await fetch(VIDEO + s.path, { cache: "no-store" });
       if (!response.ok) throw new Error("HTTP " + response.status);
       const blob = await response.blob();
+      if (token !== loadToken) return;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       objectUrl = URL.createObjectURL(blob);
       player.src = objectUrl;
+      player.muted = true;
+      await new Promise((resolve) => {
+        if (player.readyState >= 1) return resolve();
+        const done = () => { player.removeEventListener("loadedmetadata", done); resolve(); };
+        player.addEventListener("loadedmetadata", done);
+        setTimeout(done, 3000);
+      });
+      if (token !== loadToken) return;
+      const duration = Number.isFinite(player.duration) ? player.duration : offsetSec;
+      const seek = Math.max(0, Math.min(offsetSec, duration || offsetSec));
+      if (seek > 0) player.currentTime = seek;
       playerLabel.textContent = label + " · " + (blob.size / 1048576).toFixed(1) + " MB";
-      await player.play().catch(() => {});
+      updatePlayhead();
+      if (autoplay) await player.play().catch(() => {});
     } catch (error) {
-      playerLabel.textContent = "Unable to load " + s.path.split("/").pop() + ": " + error.message;
+      if (token === loadToken) {
+        playerLabel.textContent = "Unable to load " + s.path.split("/").pop() + ": " + error.message;
+      }
     }
   }
+
+  async function playNext() {
+    if (!selected || !segments.length) return;
+    const ordered = [...segments].sort((a, b) => a.start - b.start);
+    let index = ordered.findIndex((s) => s.path === selected.path);
+    if (index < 0) index = ordered.findIndex((s) => s.start === selected.start);
+    const next = ordered[index + 1];
+    if (!next) return;
+    const nextKey = localDateKey(next.start);
+    if (dateEl.value !== nextKey) {
+      dateEl.value = nextKey;
+      render();
+    }
+    await playSegment(next, 0, true);
+  }
+
+  dayEl.addEventListener("pointerdown", (event) => {
+    if (!dateEl.value || !segments.length) return;
+    scrubbing = true;
+    scrubTarget = timeFromPointer(event);
+    try { dayEl.setPointerCapture(event.pointerId); } catch (_) {}
+    setPlayhead(scrubTarget);
+    event.preventDefault();
+  });
+
+  dayEl.addEventListener("pointermove", (event) => {
+    if (!scrubbing) return;
+    scrubTarget = timeFromPointer(event);
+    setPlayhead(scrubTarget);
+  });
+
+  dayEl.addEventListener("pointerup", (event) => {
+    if (!scrubbing) return;
+    scrubbing = false;
+    const target = timeFromPointer(event);
+    const s = segmentAt(target);
+    if (!s) return;
+    suppressClickUntil = Date.now() + 400;
+    playSegment(s, Math.max(0, (target - s.start) / 1000), true);
+  });
+
+  player.addEventListener("timeupdate", updatePlayhead);
+  player.addEventListener("loadedmetadata", updatePlayhead);
+  player.addEventListener("ended", playNext);
 
   async function setTimezone(value) {
     offset = Number(value);
@@ -152,7 +253,7 @@
       }
       const data = await response.json();
       offset = Number(data.offset || 0);
-      segments = (data.segments || []).map(parseSegment);
+      segments = (data.segments || []).map(parseSegment).sort((a, b) => a.start - b.start);
       makeTzOptions();
 
       const latest = segments.reduce((a, b) => (!a || b.start > a.start ? b : a), null);
