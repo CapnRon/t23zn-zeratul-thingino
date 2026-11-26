@@ -66,26 +66,28 @@ daemon_default_enabled() {
 	esac
 }
 
-start() {
-	echo "Starting Raptor Streaming System..."
+start_rvd() {
 	mkdir -p "$RUNDIR"
 
-	# Zeratul platform: /proc/jz/sensor is not populated, so seed the
-	# identity of the built-in GC2063 sensor for the IMP.
-	RVDCONF="$CONF"
-	if ! ls /proc/jz/sensor/* >/dev/null 2>&1; then
-		cp "$CONF" "$RUNDIR/raptor.conf"
-		sed -i '/^\[sensor\]/a name = os02g10' "$RUNDIR/raptor.conf"
-		sed -i '/^name = os02g10/a i2c_addr = 0x3c' "$RUNDIR/raptor.conf"
-		sed -i '/^i2c_addr = 0x3c/a i2c_adapter = 1' "$RUNDIR/raptor.conf"
-		RVDCONF="$RUNDIR/raptor.conf"
-	fi
+	if ! pidof rvd >/dev/null 2>&1; then
+		# Zeratul platform: /proc/jz/sensor is not populated, so seed the
+		# identity of the built-in OS02G10 sensor for the IMP.
+		RVDCONF="$CONF"
+		if ! ls /proc/jz/sensor/* >/dev/null 2>&1; then
+			cp "$CONF" "$RUNDIR/raptor.conf"
+			sed -i '/^\[sensor\]/a name = os02g10' "$RUNDIR/raptor.conf"
+			sed -i '/^name = os02g10/a i2c_addr = 0x3c' "$RUNDIR/raptor.conf"
+			sed -i '/^i2c_addr = 0x3c/a i2c_adapter = 1' "$RUNDIR/raptor.conf"
+			RVDCONF="$RUNDIR/raptor.conf"
+		fi
 
-	# RVD must start first -- it creates SHM rings
-	RVD_ENV=""
-	[ -f /usr/lib/libimp_multicam_stub.so ] && RVD_ENV="LD_PRELOAD=/usr/lib/libimp_multicam_stub.so"
-	env $RVD_ENV start-stop-daemon -S -b -x /usr/bin/rvd -- -c "$RVDCONF"
-	printf "  %-4s started\n" "rvd"
+		RVD_ENV=""
+		[ -f /usr/lib/libimp_multicam_stub.so ] && RVD_ENV="LD_PRELOAD=/usr/lib/libimp_multicam_stub.so"
+		env $RVD_ENV start-stop-daemon -S -b -x /usr/bin/rvd -- -c "$RVDCONF"
+		printf "  %-4s started\n" "rvd"
+	else
+		printf "  %-4s already running\n" "rvd"
+	fi
 
 	# Wait for main ring (up to 5 seconds)
 	i=0
@@ -96,6 +98,16 @@ start() {
 
 	if [ ! -e ${SHMDIR}/rss_ring_main ]; then
 		printf "  rvd  FAILED (no ring after 5s)\n"
+		return 1
+	fi
+	return 0
+}
+
+start() {
+	echo "Starting Raptor Streaming System..."
+	mkdir -p "$RUNDIR"
+
+	if ! start_rvd; then
 		exit 1
 	fi
 
@@ -110,7 +122,7 @@ start() {
 	start_daemon rsd-555
 	start_daemon rhd
 	start_daemon ric
-	start_daemon rmr
+	# rmr is started by S33rmr after the SD card is mounted
 	start_daemon rmd
 	start_daemon rwd
 	start_daemon rsp
@@ -153,6 +165,9 @@ stop() {
 case "$1" in
 	start)
 		start
+		;;
+	early)
+		start_rvd
 		;;
 	stop)
 		stop
