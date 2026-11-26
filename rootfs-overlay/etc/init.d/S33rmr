@@ -11,11 +11,15 @@ log() {
 }
 
 start() {
-	mkdir -p /mnt/mmcblk0p1/raptor 2>/dev/null || true
-	if [ ! -d /mnt/mmcblk0p1/raptor ]; then
-		log "no storage, rmr not started"
+	if ! grep -q ' /mnt/mmcblk0p1 ' /proc/mounts; then
+		if pidof rmr >/dev/null 2>&1; then
+			log "no SD mounted; keeping RAM rmr"
+		else
+			log "no SD mounted; rmr not started"
+		fi
 		return 0
 	fi
+	mkdir -p /mnt/mmcblk0p1/raptor 2>/dev/null || true
 	if pidof rmr >/dev/null 2>&1; then
 		log "migrating RAM recording to SD"
 		killall rmr 2>/dev/null || true
