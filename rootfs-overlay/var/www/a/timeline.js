@@ -1,6 +1,6 @@
 (function () {
   const API = "/x/timeline.cgi";
-  const PLAY = "/x/tool-file-manager.cgi?play=";
+  const VIDEO = "/x/video.cgi?path=";
   const DAY_MS = 86400000;
   const SEGMENT_MS = 60000;
 
@@ -17,6 +17,7 @@
   let offset = 28800;
   let segments = [];
   let selected = null;
+  let objectUrl = "";
 
   function pad(n) { return String(n).padStart(2, "0"); }
 
@@ -111,12 +112,23 @@
     summaryEl.textContent = `${todays.length} segment${todays.length === 1 ? "" : "s"} · ${mb.toFixed(1)} MB`;
   }
 
-  function playSegment(s) {
+  async function playSegment(s) {
     selected = s;
-    player.src = PLAY + encodeURIComponent(s.path);
-    playerLabel.textContent = `${fmtTime(s.start)} · ${fmtOffset(offset)}`;
-    player.play().catch(() => {});
+    const label = `${fmtTime(s.start)} · ${fmtOffset(offset)}`;
+    playerLabel.textContent = `Loading ${s.path.split("/").slice(-2).join("/")}…`;
     render();
+    try {
+      const response = await fetch(VIDEO + s.path, { cache: "no-store" });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      const blob = await response.blob();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = URL.createObjectURL(blob);
+      player.src = objectUrl;
+      playerLabel.textContent = label + " · " + (blob.size / 1048576).toFixed(1) + " MB";
+      await player.play().catch(() => {});
+    } catch (error) {
+      playerLabel.textContent = "Unable to load " + s.path.split("/").pop() + ": " + error.message;
+    }
   }
 
   async function setTimezone(value) {
