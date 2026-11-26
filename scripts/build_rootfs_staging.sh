@@ -72,4 +72,4 @@ rm -rf "$DST/var/www/onvif"
 echo "staging: $DST"
 echo "  source: $SRC"
 echo "  raptor: $RAPTOR"
-[ -n "$MODULES" ] && echo "  modules: $MODULES"
+if [ -n "$MODULES" ]; then echo "  modules: $MODULES"; fi
