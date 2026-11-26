@@ -33,6 +33,9 @@ TAG_GENERATOR ?= $(SDK_DIR)/../make_tag/tools/make_tag/tag_generator/tag_generat
 # Rootfs staging assembled from the thingino target + rootfs-overlay +
 # artifacts/raptor-v5 + the kernel modules (see docs/PINNED_BUILD_increment75.md).
 ROOTFS_STAGING ?=
+THINGINO_ROOTFS ?=
+KERNEL_MODULES ?=
+RAPTOR_V5 ?= artifacts/raptor-v5
 
 # Pinned payloads (defaults = the pinned build)
 BASE_IMAGE ?= artifacts/ZRT_increment75_os02g10_rsd5.bin
@@ -47,7 +50,7 @@ TAG_ENV     ?= senv;[HW];init_vw=1920;init_vh=1080;nrvbs=1;[IR];ir_mode=auto;ir_
 OUT_DIR ?= out
 OUT     ?= $(OUT_DIR)/ZRT_custom.bin
 
-.PHONY: all image flash verify check sensor kernel tag rootfs clean
+.PHONY: all image flash verify check sensor kernel tag staging rootfs clean
 
 all: image
 
@@ -102,6 +105,14 @@ tag:
 	@mkdir -p "$(OUT_DIR)"
 	scripts/update_tag.sh "$(TAG_GENERATOR)" "$(TAG_BASE)" "$(OUT_DIR)/tag.bin" "$(TAG_ENV)" "$(TAG_CMDLINE)"
 	@echo "tag payload: $(OUT_DIR)/tag.bin"
+
+# assemble rootfs staging from thingino target + overlay
+staging:
+	@test -n "$(THINGINO_ROOTFS)" || { \
+		echo "ERROR: set THINGINO_ROOTFS=/path/to/thingino-target-rootfs"; exit 1; }
+	@test -n "$(ROOTFS_STAGING)" || { \
+		echo "ERROR: set ROOTFS_STAGING=/path/to/rootfs-staging"; exit 1; }
+	scripts/build_rootfs_staging.sh "$(THINGINO_ROOTFS)" "$(ROOTFS_STAGING)" "$(RAPTOR_V5)" "$(KERNEL_MODULES)"
 
 # build the 5 MB rootfs container from a staging tree
 rootfs:

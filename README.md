@@ -99,7 +99,9 @@ Source builds (with the SDK / thingino / Raptor trees available):
 make check SDK_DIR=... RAPTOR_DIR=...
 make sensor kernel SDK_DIR=... KERNEL_DIR=...
 make tag TAG_GENERATOR=... TAG_BASE=/path/to/factory_tag.bin
-make rootfs ROOTFS_STAGING=/path/to/thingino-rootfs
+make staging THINGINO_ROOTFS=/path/to/thingino-target-rootfs \
+  ROOTFS_STAGING=/path/to/rootfs-staging KERNEL_MODULES=/path/to/modules
+make rootfs ROOTFS_STAGING=/path/to/rootfs-staging
 make image KERNEL=out/uImage.jzlzma TAG=out/tag.bin ROOTFS=out/rootfs.jzlzma
 ```
 
@@ -107,6 +109,9 @@ The os02g10 driver is in `drivers/sensor-t23/zeratul/os02g10/`; the kernel
 config is `configs/kernel_increment75_os02g10.config`. `rootfs-overlay/` holds
 the boot/provisioning/streamer configuration; it contains **no credentials**
 (WiFi is provisioned via the portal or `/etc/wpa_supplicant.conf`).
+
+Full instructions, tag splits, boot order and failure modes:
+`docs/BUILD_FROM_SCRATCH.md`.
 
 **Licensing/redistribution:** the Ingenic SDK, toolchain, IMP libraries and the
 ATBM6461 driver are proprietary and must not be vendored here; the thingino
