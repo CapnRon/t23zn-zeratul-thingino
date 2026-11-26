@@ -168,6 +168,7 @@
       objectUrl = URL.createObjectURL(blob);
       player.src = objectUrl;
       player.muted = true;
+      playerLabel.textContent = label + " · " + (blob.size / 1048576).toFixed(1) + " MB";
       await new Promise((resolve) => {
         if (player.readyState >= 1) return resolve();
         const done = () => { player.removeEventListener("loadedmetadata", done); resolve(); };
@@ -178,7 +179,6 @@
       const duration = Number.isFinite(player.duration) ? player.duration : offsetSec;
       const seek = Math.max(0, Math.min(offsetSec, duration || offsetSec));
       if (seek > 0) player.currentTime = seek;
-      playerLabel.textContent = label + " · " + (blob.size / 1048576).toFixed(1) + " MB";
       updatePlayhead();
       if (autoplay) await player.play().catch(() => {});
     } catch (error) {
@@ -225,7 +225,14 @@
     const s = segmentAt(target);
     if (!s) return;
     suppressClickUntil = Date.now() + 400;
-    playSegment(s, Math.max(0, (target - s.start) / 1000), true);
+    const seek = Math.max(0, (target - s.start) / 1000);
+    if (selected && selected.path === s.path && player.src && Number.isFinite(player.duration)) {
+      player.currentTime = Math.min(seek, player.duration);
+      player.play().catch(() => {});
+      updatePlayhead();
+      return;
+    }
+    playSegment(s, seek, true);
   });
 
   player.addEventListener("timeupdate", updatePlayhead);
