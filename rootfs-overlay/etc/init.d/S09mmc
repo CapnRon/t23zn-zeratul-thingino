@@ -153,18 +153,15 @@ set_power() {
 }
 
 load_module() {
-	if grep -q "$MMC_MODULE" /proc/modules >/dev/null; then
+	if ! grep -q "$MMC_MODULE" /proc/modules >/dev/null; then
+		echo "Load $MMC_MODULE $MMC_PARAM"
+		if ! modprobe $MMC_MODULE $MMC_PARAM; then
+			echo "Failed to load module!" >&2
+			exit 1
+		fi
+	else
 		echo "$MMC_MODULE is already loaded" >&2
-		return 0
 	fi
-
-	echo "Load $MMC_MODULE $MMC_PARAM"
-
-	if ! modprobe $MMC_MODULE $MMC_PARAM; then
-		echo "Failed to load module!" >&2
-		exit 1
-	fi
-
 	set_power
 }
 
