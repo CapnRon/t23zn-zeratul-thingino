@@ -38,7 +38,9 @@ while IFS='|' read -r entry_boot path clip_up; do
 	mkdir -p "/mnt/mmcblk0p1/raptor/$new_day"
 	dest="/mnt/mmcblk0p1/raptor/$new_day/$new_time.mp4"
 	[ "$dest" = "$path" ] && continue
-	[ -e "$dest" ] && dest="${dest%.mp4}.1.mp4"
+	base_dest="$dest"
+	n=1
+	while [ -e "$dest" ]; do dest="${base_dest%.mp4}.$n.mp4"; n=$((n + 1)); done
 	printf '%s clockfix %s -> %s (%s)\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$path" "$dest" "$true_utc" >> "$LOG"
 	mv "$path" "$dest"
 done < "$JOURNAL"
@@ -65,7 +67,9 @@ while IFS='|' read -r entry_boot path clip_up; do
 	mkdir -p "/mnt/mmcblk0p1/raptor/$new_day"
 	dest="/mnt/mmcblk0p1/raptor/$new_day/$new_time.mp4"
 	[ "$dest" = "$path" ] && continue
-	[ -e "$dest" ] && dest="${dest%.mp4}.1.mp4"
+	base_dest="$dest"
+	n=1
+	while [ -e "$dest" ]; do dest="${base_dest%.mp4}.$n.mp4"; n=$((n + 1)); done
 	printf '%s clockfix-retry %s -> %s (%s)\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$path" "$dest" "$true_utc" >> "$LOG"
 	mv "$path" "$dest"
 done < "$JOURNAL"

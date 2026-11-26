@@ -6,8 +6,16 @@
 JOURNAL=/run/clipwatch/journal
 SEEN=/run/clipwatch/seen
 mkdir -p /run/clipwatch
-touch "$JOURNAL" "$SEEN"
+touch "$JOURNAL"
+: > "$SEEN"
 boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown)
+
+# Snapshot existing archive first; only new clips get journal entries.
+for root in /dev/shm/raptor /mnt/mmcblk0p1/raptor; do
+	[ -d "$root" ] || continue
+	find "$root" -type f -name '*.mp4' 2>/dev/null >> "$SEEN"
+done
+sort -u "$SEEN" -o "$SEEN"
 
 while :; do
 	for root in /dev/shm/raptor /mnt/mmcblk0p1/raptor; do
