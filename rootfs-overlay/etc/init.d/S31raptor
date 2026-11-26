@@ -89,17 +89,6 @@ start_rvd() {
 		printf "  %-4s already running\n" "rvd"
 	fi
 
-	# Wait for main ring (up to 5 seconds)
-	i=0
-	while [ $i -lt 50 ] && [ ! -e ${SHMDIR}/rss_ring_main ]; do
-		usleep 100000
-		i=$((i + 1))
-	done
-
-	if [ ! -e ${SHMDIR}/rss_ring_main ]; then
-		printf "  rvd  FAILED (no ring after 5s)\n"
-		return 1
-	fi
 	return 0
 }
 
