@@ -18,10 +18,16 @@ start() {
 
 	/usr/bin/atbm-at 'AT+SNTP_SET ZONE 0' >/dev/null 2>&1 || true
 	sleep 1
-	if /usr/bin/atbm-time -s -o 0 >>"$LOG" 2>&1; then
-		log "clock set from MCU"
+	before=$(date +%s)
+	out=$(/usr/bin/atbm-time -s -o 0 2>&1)
+	rc=$?
+	printf '%s\n' "$out" >>"$LOG"
+	utc=$(printf '%s\n' "$out" | sed -n 's/^utc=//p' | tail -1)
+	if [ "$rc" -eq 0 ] && [ -n "$utc" ] && [ "$utc" -ge 1600000000 ] 2>/dev/null; then
+		log "clock set from MCU ($utc)"
 	else
-		log "clock set failed"
+		date -u -s "@$before" >/dev/null 2>&1 || true
+		log "MCU clock invalid (${utc:-none}); keep build time"
 	fi
 }
 
