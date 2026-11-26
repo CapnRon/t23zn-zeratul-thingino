@@ -17,8 +17,20 @@ start() {
 		return 0
 	fi
 	if pidof rmr >/dev/null 2>&1; then
-		log "already running"
-		return 0
+		log "migrating RAM recording to SD"
+		killall rmr 2>/dev/null || true
+		i=0
+		while pidof rmr >/dev/null 2>&1 && [ "$i" -lt 30 ]; do
+			sleep 0.1
+			i=$((i + 1))
+		done
+		if pidof rmr >/dev/null 2>&1; then
+			killall -9 rmr 2>/dev/null || true
+		fi
+		if [ -d /dev/shm/raptor ]; then
+			cp -a /dev/shm/raptor/. /mnt/mmcblk0p1/raptor/ 2>/dev/null || true
+			sync
+		fi
 	fi
 	TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
 	sleep 1
