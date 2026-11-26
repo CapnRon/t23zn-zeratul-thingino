@@ -169,6 +169,7 @@ load_module() {
 }
 
 start() {
+	[ -e /run/s09.done ] && return 0
 	echo -c 15 "Initializing MMC"
 
 	gpio_mmc_cd=$(jct "$MMC_CONFIG_JSON" get "gpio.mmc_cd")
@@ -184,6 +185,8 @@ start() {
 		echo "ATBM6461: disabling MCU watchdog"
 		/usr/bin/mcu_test --wdt_disable
 	fi
+	mkdir -p /run
+	touch /run/s09.done
 }
 
 case "$1" in
