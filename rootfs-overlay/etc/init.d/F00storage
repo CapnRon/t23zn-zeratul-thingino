@@ -15,7 +15,7 @@ start() {
 	mkdir -p "$MNT"
 
 	i=0
-	while [ "$i" -lt 50 ]; do
+	while [ "$i" -lt 20 ]; do
 		if grep -q " $MNT " /proc/mounts; then
 			break
 		fi
@@ -59,7 +59,12 @@ start() {
 
 	if ! pidof rmr >/dev/null 2>&1; then
 		TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
-		log "rmr SD started"
+		sleep 1
+		if pidof rmr >/dev/null 2>&1; then
+			log "rmr SD started (pid $(pidof rmr))"
+		else
+			log "rmr SD failed to start"
+		fi
 	fi
 }
 

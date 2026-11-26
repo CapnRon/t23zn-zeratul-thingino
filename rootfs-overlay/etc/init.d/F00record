@@ -13,11 +13,17 @@ log() {
 }
 
 start() {
-	mkdir -p "$RAMDIR"
-	cp "$CONF" "$RAMCONF"
+	mkdir -p "$RAMDIR" /var/run/rss
+	cp "$CONF" "$RAMCONF" || { log "config copy failed"; return 1; }
 	sed -i 's|^storage_path.*|storage_path = /dev/shm/raptor|' "$RAMCONF"
+	sed -i "/^\[recording\]/,/^\[webrtc\]/s/^max_storage_mb = .*/max_storage_mb = 8/" "$RAMCONF"
 	TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$RAMCONF"
-	log "rmr RAM started"
+	sleep 1
+	if pidof rmr >/dev/null 2>&1; then
+		log "rmr RAM started (pid $(pidof rmr))"
+	else
+		log "rmr RAM failed to start"
+	fi
 }
 
 case "$1" in

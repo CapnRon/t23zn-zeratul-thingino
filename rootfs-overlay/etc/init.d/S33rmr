@@ -21,7 +21,12 @@ start() {
 		return 0
 	fi
 	TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
-	log "started"
+	sleep 1
+	if pidof rmr >/dev/null 2>&1; then
+		log "started (pid $(pidof rmr))"
+	else
+		log "rmr failed to start"
+	fi
 }
 
 case "$1" in
