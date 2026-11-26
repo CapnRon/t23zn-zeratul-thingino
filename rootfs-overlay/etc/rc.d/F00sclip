@@ -1,0 +1,18 @@
+#!/bin/sh
+# Start the monotonic clip journal before the recorder migrates to SD.
+case "$1" in
+	start)
+		[ -x /usr/bin/clipwatch ] && /usr/bin/clipwatch &
+		;;
+	stop)
+		true
+		;;
+	restart)
+		[ -x /usr/bin/clipwatch ] && /usr/bin/clipwatch &
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}" >&2
+		exit 1
+		;;
+esac
+exit 0

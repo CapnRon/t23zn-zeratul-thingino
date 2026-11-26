@@ -49,6 +49,9 @@ if ! "$MCU" --pir_enable >/dev/null 2>&1; then
 	log "PIR enable failed; refusing automatic poweroff"
 	exit 1
 fi
+if [ -x /usr/bin/atbm-wake ]; then
+	/usr/bin/atbm-wake disarm >/dev/null 2>&1 || true
+fi
 log "PIR enabled"
 
 while :; do

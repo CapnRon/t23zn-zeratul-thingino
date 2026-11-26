@@ -1,0 +1,90 @@
+#!/bin/sh
+
+# Set the SoC UTC clock from the battery-backed MCU clock.
+# This runs after rmr has started, so it must never block recording.
+
+LOG=/data/root/clock.log
+OLD=/run/clock.old
+NEW=/run/clock.new
+READY=/run/clock.ready
+SOURCE=/run/clock.source
+
+log() {
+	mkdir -p /data/root /run
+	printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG"
+}
+mcu_time() {
+	/usr/bin/atbm-time 2>/dev/null
+}
+mcu_valid() {
+	echo "$1" | grep -q 'mcu=20[2-9][0-9]-'
+}
+mcu_set() {
+	pre=$(date +%s)
+	echo "$pre" > /run/clock.pre
+	/usr/bin/atbm-time -s -o 0 >/dev/null 2>&1
+}
+
+mkdir -p /run /data/root
+[ -e "$READY" ] && exit 0
+if ! mkdir /run/clock.lock 2>/dev/null; then
+	exit 0
+fi
+trap 'rmdir /run/clock.lock 2>/dev/null' EXIT
+
+old=$(date +%s)
+echo "$old" > "$OLD"
+log "start old=$old"
+/usr/bin/atbm-at 'AT+SNTP_SET ZONE 0' >/dev/null 2>&1 || true
+
+i=0
+while [ ! -e /dev/atbm_ioctl ] && [ "$i" -lt 80 ]; do
+	usleep 250000
+	i=$((i + 1))
+done
+
+source="unavailable"
+t=$(mcu_time)
+if mcu_valid "$t"; then
+	if mcu_set; then
+		source="mcu-clock"
+	fi
+else
+	/usr/bin/atbm-at 'AT+SNTP_SET ZONE 0' >/dev/null 2>&1 || true
+	/usr/bin/atbm-at 'AT+SNTP_GET' >/dev/null 2>&1 || true
+	i=0
+	while [ "$i" -lt 12 ]; do
+		sleep 1
+		t=$(mcu_time)
+		if mcu_valid "$t"; then
+			if mcu_set; then
+				source="mcu-sntp"
+			fi
+			break
+		fi
+		i=$((i + 1))
+	done
+fi
+
+if [ "$source" = "unavailable" ]; then
+	last=$(cat /data/root/etc/clock/last 2>/dev/null)
+	case "$last" in
+		''|*[!0-9]*) ;;
+		*) date -s "@$last" >/dev/null 2>&1 && source="last-known" ;;
+	esac
+fi
+
+new=$(date +%s)
+sync_up=$(cut -d. -f1 /proc/uptime)
+echo "$new" > "$NEW"
+echo "$new" > /run/clock.sync_utc
+echo "$sync_up" > /run/clock.sync_uptime
+cat /proc/sys/kernel/random/boot_id 2>/dev/null > /run/clock.boot_id || true
+echo "$source" > "$SOURCE"
+date -u > "$READY"
+log "done source=$source old=$old new=$new sync_up=$sync_up"
+
+if [ "$source" != "unavailable" ] && [ "$new" -gt "$old" ]; then
+	[ -x /usr/bin/clockfix ] && /usr/bin/clockfix &
+fi
+exit 0

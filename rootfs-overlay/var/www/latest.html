@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>thingino · Camera Preview</title>
+  <script src="/a/theme-init.js"></script>
+  <link rel="icon" type="image/svg+xml" href="/a/favicon.svg">
+  <link rel="stylesheet" href="/a/vendor/montserrat.css">
+  <link rel="stylesheet" href="/a/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="/a/vendor/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/a/main.css">
+  <style>
+    #timeline { position: relative; height: 54px; background: #111820; border: 1px solid #2a3642; border-radius: .4rem; overflow: hidden; }
+    .timeline-segment { position: absolute; top: 12px; height: 28px; min-width: 2px; background: #2f81f7; border: 1px solid #62a4ff; border-radius: 2px; cursor: pointer; }
+    .timeline-segment:hover { background: #f0a020; border-color: #ffd479; }
+    .timeline-tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid #26313c; color: #8fa3b5; font-size: .65rem; padding-left: 2px; }
+  </style>
+</head>
+
+<body id="page-latest">
+<nav data-app-nav></nav>
+
+<main class="pb-4">
+  <div class="container" style="min-height:80vh">
+    <div data-app-controls></div>
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+      <div>
+        <h1 class="h3 mb-1">Camera Preview</h1>
+        <p class="text-secondary mb-0">Latest completed recording segment. Not a live stream.</p>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary btn-sm" href="/tool-file-manager.html?cd=%2Fmnt%2Fmmcblk0p1%2Fraptor">
+          <i class="bi bi-folder2-open me-1"></i>Recordings index
+        </a>
+        <button class="btn btn-outline-secondary btn-sm" id="refreshPreview" type="button">
+          <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body p-0">
+        <video id="cameraPreview" class="w-100" controls autoplay muted loop playsinline preload="metadata"
+               style="max-height:75vh;background:#000"></video>
+      </div>
+      <div class="card-footer small text-secondary" id="previewStatus">Selecting the latest completed segment…</div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Recordings today</span>
+        <span class="small text-secondary" id="timelineStatus">Loading timeline…</span>
+      </div>
+      <div class="card-body">
+        <div id="timeline"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer data-app-footer></footer>
+
+<script src="/a/vendor/bootstrap.bundle.min.js"></script>
+<script src="/a/main.js"></script>
+<script src="/a/runtime-config.js"></script>
+<script src="/a/control-bar.js"></script>
+<script src="/a/navigation.js"></script>
+<script src="/a/footer.js"></script>
+<script>
+(function () {
+  const video = document.getElementById("cameraPreview");
+  const status = document.getElementById("previewStatus");
+  const refresh = document.getElementById("refreshPreview");
+  const timeline = document.getElementById("timeline");
+  const timelineStatus = document.getElementById("timelineStatus");
+
+  async function load() {
+    status.textContent = "Selecting the latest completed segment…";
+    try {
+      const response = await fetch("/x/latest-recording.cgi", { cache: "no-store" });
+      if (response.status === 401) {
+        window.location.href = "/login.html?next=" + encodeURIComponent("/preview.html");
+        return;
+      }
+      const data = await response.json();
+      if (!data.path) {
+        status.textContent = "No completed recording is available yet.";
+        return;
+      }
+      await setVideo(data.path);
+    } catch (error) {
+      status.textContent = "Unable to load preview: " + error.message;
+    }
+  }
+
+  let objectUrl = "";
+
+  async function setVideo(path) {
+    status.textContent = "Loading " + path.split("/").slice(-2).join("/") + "…";
+    const response = await fetch("/x/video.cgi?path=" + path, { cache: "no-store" });
+    if (response.status === 401) {
+      window.location.href = "/login.html?next=" + encodeURIComponent("/preview.html");
+      return;
+    }
+    if (!response.ok) {
+      throw new Error("HTTP " + response.status);
+    }
+    const blob = await response.blob();
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = URL.createObjectURL(blob);
+    video.src = objectUrl;
+    status.textContent = path.split("/").slice(-2).join("/") +
+      " · " + (blob.size / 1048576).toFixed(1) + " MB";
+  }
+
+  function playPath(path) {
+    setVideo(path).catch((error) => {
+      status.textContent = "Unable to load " + path + ": " + error.message;
+    });
+  }
+
+  async function loadTimeline() {
+    try {
+      const response = await fetch("/x/recordings.cgi", { cache: "no-store" });
+      if (response.status === 401) {
+        window.location.href = "/login.html?next=" + encodeURIComponent("/preview.html");
+        return;
+      }
+      const data = await response.json();
+      const offset = Number(data.offset || 0);
+      timeline.innerHTML = "";
+      for (let h = 0; h < 24; h += 2) {
+        const tick = document.createElement("div");
+        tick.className = "timeline-tick";
+        tick.style.left = (h / 24 * 100) + "%";
+        tick.textContent = String(h).padStart(2, "0");
+        timeline.appendChild(tick);
+      }
+      let count = 0;
+      (data.segments || []).forEach((seg) => {
+        const utc = Number(seg.utc);
+        if (!Number.isFinite(utc)) return;
+        const local = new Date((utc + offset) * 1000);
+        const localDay = local.toISOString().slice(0, 10);
+        if (data.day && localDay !== data.day) return;
+        const seconds = local.getUTCHours() * 3600 + local.getUTCMinutes() * 60 + local.getUTCSeconds();
+        const label = [local.getUTCHours(), local.getUTCMinutes()].map((n) => String(n).padStart(2, "0")).join(":");
+        const el = document.createElement("div");
+        el.className = "timeline-segment";
+        el.style.left = (seconds / 86400 * 100) + "%";
+        el.style.width = Math.max(0.04, 60 / 86400 * 100) + "%";
+        el.title = label + " · " + (Number(seg.size || 0) / 1048576).toFixed(1) + " MB";
+        el.addEventListener("click", () => playPath(seg.path));
+        timeline.appendChild(el);
+        count += 1;
+      });
+      const offsetLabel = offset === 0 ? "UTC" : (offset > 0 ? "+" : "") + (offset / 3600);
+      timelineStatus.textContent = count + " segments · " + data.day + " · " + offsetLabel;
+    } catch (error) {
+      timelineStatus.textContent = "Unable to load timeline.";
+    }
+  }
+
+  refresh.addEventListener("click", load);
+  video.addEventListener("error", () => {
+    status.textContent = "Browser could not play this segment.";
+  });
+  load();
+  loadTimeline();
+})();
+</script>
+</body>
+</html>

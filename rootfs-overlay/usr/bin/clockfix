@@ -1,0 +1,75 @@
+#!/bin/sh
+
+# Correct only clips recorded during this boot before the clock sync.
+# Start time comes from the clipwatch monotonic journal, not filenames/mtime.
+
+LOG=/data/root/clock.log
+JOURNAL=/run/clipwatch/journal
+SYNC_UTC=/run/clock.sync_utc
+SYNC_UP=/run/clock.sync_uptime
+BOOT_ID=/run/clock.boot_id
+[ -r "$JOURNAL" ] && [ -r "$SYNC_UTC" ] && [ -r "$SYNC_UP" ] || exit 0
+
+sync_utc=$(cat "$SYNC_UTC" 2>/dev/null)
+sync_up=$(cat "$SYNC_UP" 2>/dev/null)
+boot_id=$(cat "$BOOT_ID" 2>/dev/null)
+case "$sync_utc$sync_up" in ''|*[!0-9]*) exit 0 ;; esac
+
+sleep 90
+
+while IFS='|' read -r entry_boot path clip_up; do
+	[ -n "$entry_boot" ] || continue
+	case "$path" in /dev/shm/raptor/*) continue ;; esac
+	[ "$entry_boot" = "$boot_id" ] || continue
+	case "$clip_up" in ''|*[!0-9]*) continue ;; esac
+	[ "$clip_up" -le "$sync_up" ] || continue
+
+	if [ ! -f "$path" ]; then
+		base=${path##*/}
+		path=$(find /mnt/mmcblk0p1/raptor -type f -name "$base" 2>/dev/null | head -1)
+	fi
+	[ -n "$path" ] && [ -f "$path" ] || continue
+
+	mtime=$(stat -c %Y "$path" 2>/dev/null)
+	if [ -n "$mtime" ] && [ "$mtime" -ge "$((now - 5))" ]; then
+		continue
+	fi
+
+	true_utc=$((sync_utc - (sync_up - clip_up)))
+	new_day=$(date -u -d "@$true_utc" +%F 2>/dev/null)
+	new_time=$(date -u -d "@$true_utc" +%H-%M-%S 2>/dev/null)
+	[ -n "$new_day" ] && [ -n "$new_time" ] || continue
+	mkdir -p "/mnt/mmcblk0p1/raptor/$new_day"
+	dest="/mnt/mmcblk0p1/raptor/$new_day/$new_time.mp4"
+	[ "$dest" = "$path" ] && continue
+	if [ -e "$dest" ]; then
+		dest="${dest%.mp4}.1.mp4"
+	fi
+	printf '%s clockfix %s -> %s (%s)\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$path" "$dest" "$true_utc" >> "$LOG"
+	mv "$path" "$dest"
+done < "$JOURNAL"
+sync
+sleep 30
+now=$(cut -d. -f1 /proc/uptime)
+while IFS='|' read -r entry_boot path clip_up; do
+	[ -n "$entry_boot" ] || continue
+	case "$path" in /dev/shm/raptor/*) continue ;; esac
+	[ "$entry_boot" = "$boot_id" ] || continue
+	case "$clip_up" in ''|*[!0-9]*) continue ;; esac
+	[ "$clip_up" -le "$sync_up" ] || continue
+	[ -f "$path" ] || continue
+	mtime=$(stat -c %Y "$path" 2>/dev/null)
+	[ -n "$mtime" ] && [ "$mtime" -ge "$((now - 5))" ] && continue
+	true_utc=$((sync_utc - (sync_up - clip_up)))
+	new_day=$(date -u -d "@$true_utc" +%F 2>/dev/null)
+	new_time=$(date -u -d "@$true_utc" +%H-%M-%S 2>/dev/null)
+	[ -n "$new_day" ] && [ -n "$new_time" ] || continue
+	mkdir -p "/mnt/mmcblk0p1/raptor/$new_day"
+	dest="/mnt/mmcblk0p1/raptor/$new_day/$new_time.mp4"
+	[ "$dest" = "$path" ] && continue
+	[ -e "$dest" ] && dest="${dest%.mp4}.1.mp4"
+	printf '%s clockfix-retry %s -> %s (%s)\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$path" "$dest" "$true_utc" >> "$LOG"
+	mv "$path" "$dest"
+done < "$JOURNAL"
+sync
+exit 0

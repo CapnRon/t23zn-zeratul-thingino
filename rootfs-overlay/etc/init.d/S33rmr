@@ -10,6 +10,10 @@ log() {
 	echo "rmr: $*" >> "$LOG"
 }
 
+start_pwrman() {
+	[ -x /etc/init.d/S99pwrman ] && /etc/init.d/S99pwrman start
+}
+
 start() {
 	mkdir -p /mnt/mmcblk0p1/raptor 2>/dev/null || true
 	if [ ! -d /mnt/mmcblk0p1/raptor ]; then
@@ -18,10 +22,12 @@ start() {
 	fi
 	if pidof rmr >/dev/null 2>&1; then
 		log "already running"
+		start_pwrman
 		return 0
 	fi
-	start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
+	TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
 	log "started"
+	start_pwrman
 }
 
 case "$1" in
