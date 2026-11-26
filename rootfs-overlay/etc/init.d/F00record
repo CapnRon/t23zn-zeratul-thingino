@@ -1,0 +1,64 @@
+#!/bin/sh
+# F00record -- record the pre-SD window into /dev/shm.
+
+CONF=/etc/raptor.conf
+RAMCONF=/var/run/rss/raptor-ram.conf
+RAMDIR=/dev/shm/raptor
+LOG=/var/log/boot-timing.log
+
+log() {
+	mkdir -p /var/log
+	awk '{printf "%.3f ", $1}' /proc/uptime >> "$LOG"
+	echo "f00record: $*" >> "$LOG"
+}
+
+start() {
+	mkdir -p "$RAMDIR" /var/run/rss
+	cp "$CONF" "$RAMCONF" || { log "config copy failed"; return 1; }
+	sed -i 's|^storage_path.*|storage_path = /dev/shm/raptor|' "$RAMCONF"
+	sed -i "/^\[recording\]/,/^\[webrtc\]/s/^max_storage_mb = .*/max_storage_mb = 8/" "$RAMCONF"
+	TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$RAMCONF"
+	log "rmr RAM launched"
+	(
+		stable=0
+		i=0
+		while [ $i -lt 100 ]; do
+			usleep 100000
+			if pidof rmr >/dev/null 2>&1; then
+				stable=$((stable + 1))
+				if [ -e /dev/shm/rss_ring_main ] && [ $stable -ge 5 ]; then
+					log "rmr RAM running (pid $(pidof rmr))"
+					exit 0
+				fi
+			else
+				stable=0
+				if [ -e /dev/shm/rss_ring_main ]; then
+					TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$RAMCONF"
+					log "rmr RAM relaunched on ring"
+				fi
+			fi
+			i=$((i + 1))
+		done
+		log "rmr RAM not stable"
+	) &
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		killall rmr 2>/dev/null || true
+		;;
+	restart)
+		killall rmr 2>/dev/null || true
+		sleep 1
+		start
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}" >&2
+		exit 1
+		;;
+esac
+
+exit 0

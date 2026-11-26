@@ -1,0 +1,36 @@
+#!/bin/sh
+# F00mmc -- load the SD controller before rcS so card enumeration overlaps rvd.
+
+LOG=/var/log/boot-timing.log
+
+log() {
+	mkdir -p /var/log
+	awk '{printf "%.3f ", $1}' /proc/uptime >> "$LOG"
+	echo "f00mmc: $*" >> "$LOG"
+}
+
+start() {
+	grep -q ' /dev ' /proc/mounts || mount -t devtmpfs devtmpfs /dev 2>/dev/null
+	log "loading jzmmc"
+	modprobe jzmmc cd_gpio_pin=61 2>/dev/null || true
+	modprobe mmc_block 2>/dev/null || true
+	log "done"
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		true
+		;;
+	restart)
+		start
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart}" >&2
+		exit 1
+		;;
+esac
+
+exit 0
