@@ -17,13 +17,29 @@ start() {
 	cp "$CONF" "$RAMCONF" || { log "config copy failed"; return 1; }
 	sed -i 's|^storage_path.*|storage_path = /dev/shm/raptor|' "$RAMCONF"
 	sed -i "/^\[recording\]/,/^\[webrtc\]/s/^max_storage_mb = .*/max_storage_mb = 8/" "$RAMCONF"
-	TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$RAMCONF"
-	sleep 1
-	if pidof rmr >/dev/null 2>&1; then
-		log "rmr RAM started (pid $(pidof rmr))"
-	else
-		log "rmr RAM failed to start"
-	fi
+	(
+		i=0
+		while [ $i -lt 100 ] && [ ! -e /dev/shm/rss_ring_main ]; do
+			usleep 100000
+			i=$((i + 1))
+		done
+		if pidof rmr >/dev/null 2>&1; then
+			log "rmr already running"
+			exit 0
+		fi
+		if [ ! -e /dev/shm/rss_ring_main ]; then
+			log "no ring; rmr not started"
+			exit 0
+		fi
+		TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$RAMCONF"
+		sleep 0.5
+		if pidof rmr >/dev/null 2>&1; then
+			log "rmr RAM started (pid $(pidof rmr))"
+		else
+			log "rmr RAM failed to start"
+		fi
+	) &
+	log "rmr RAM start scheduled"
 }
 
 case "$1" in
