@@ -16,7 +16,7 @@ start() {
 	mkdir -p "$RAMDIR"
 	cp "$CONF" "$RAMCONF"
 	sed -i 's|^storage_path.*|storage_path = /dev/shm/raptor|' "$RAMCONF"
-	start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$RAMCONF"
+	TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$RAMCONF"
 	log "rmr RAM started"
 }
 

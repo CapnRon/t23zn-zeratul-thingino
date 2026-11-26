@@ -20,7 +20,7 @@ start() {
 		log "already running"
 		return 0
 	fi
-	start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
+	TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
 	log "started"
 }
 

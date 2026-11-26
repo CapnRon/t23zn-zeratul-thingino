@@ -58,7 +58,7 @@ start() {
 	fi
 
 	if ! pidof rmr >/dev/null 2>&1; then
-		start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
+		TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$CONF"
 		log "rmr SD started"
 	fi
 }
