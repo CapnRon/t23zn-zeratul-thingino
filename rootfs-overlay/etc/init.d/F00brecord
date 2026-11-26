@@ -20,21 +20,26 @@ start() {
 	TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$RAMCONF"
 	log "rmr RAM launched"
 	(
+		stable=0
 		i=0
 		while [ $i -lt 100 ]; do
 			usleep 100000
 			if pidof rmr >/dev/null 2>&1; then
-				log "rmr RAM running (pid $(pidof rmr))"
-				exit 0
-			fi
-			if [ -e /dev/shm/rss_ring_main ]; then
-				TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$RAMCONF"
-				log "rmr RAM relaunched on ring"
-				exit 0
+				stable=$((stable + 1))
+				if [ -e /dev/shm/rss_ring_main ] && [ $stable -ge 5 ]; then
+					log "rmr RAM running (pid $(pidof rmr))"
+					exit 0
+				fi
+			else
+				stable=0
+				if [ -e /dev/shm/rss_ring_main ]; then
+					TZ=UTC start-stop-daemon -S -b -x /usr/bin/rmr -- -c "$RAMCONF"
+					log "rmr RAM relaunched on ring"
+				fi
 			fi
 			i=$((i + 1))
 		done
-		log "rmr RAM not running"
+		log "rmr RAM not stable"
 	) &
 }
 
