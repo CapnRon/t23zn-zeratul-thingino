@@ -1,0 +1,35 @@
+#!/bin/sh
+# S10clock -- set the SoC UTC clock from the MCU SDIO clock before networking.
+
+LOG=/var/log/boot-timing.log
+
+log() {
+	mkdir -p /var/log
+	awk '{printf "%.3f ", $1}' /proc/uptime >> "$LOG"
+	echo "clock: $*" >> "$LOG"
+}
+
+start() {
+	[ -x /usr/bin/atbm-time ] || return 0
+	[ -e /dev/atbm_ioctl ] || {
+		log "atbm ioctl missing"
+		return 0
+	}
+
+	/usr/bin/atbm-at 'AT+SNTP_SET ZONE 0' >/dev/null 2>&1 || true
+	sleep 1
+	if /usr/bin/atbm-time -s -o 0 >>"$LOG" 2>&1; then
+		log "clock set from MCU"
+	else
+		log "clock set failed"
+	fi
+}
+
+case "$1" in
+	start) start ;;
+	stop) true ;;
+	restart) start ;;
+	*) echo "Usage: $0 {start|stop|restart}" >&2; exit 1 ;;
+esac
+
+exit 0
