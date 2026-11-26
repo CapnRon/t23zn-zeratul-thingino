@@ -21,6 +21,10 @@ start() {
 	fi
 	mkdir -p /mnt/mmcblk0p1/raptor 2>/dev/null || true
 	if pidof rmr >/dev/null 2>&1; then
+		if tr '\0' ' ' < /proc/$(pidof rmr)/cmdline 2>/dev/null | grep -q '/etc/raptor.conf'; then
+			log "rmr already on SD; skip"
+			return 0
+		fi
 		log "migrating RAM recording to SD"
 		killall rmr 2>/dev/null || true
 		i=0
