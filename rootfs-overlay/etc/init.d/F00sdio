@@ -1,20 +1,21 @@
 #!/bin/sh
-# F00mmc -- load the SD controller before rcS so card enumeration overlaps rvd.
+# F00sdio -- load MMC/ATBM and disable MCU WDT after recording starts.
 
 LOG=/var/log/boot-timing.log
 
 log() {
 	mkdir -p /var/log
 	awk '{printf "%.3f ", $1}' /proc/uptime >> "$LOG"
-	echo "f00mmc: $*" >> "$LOG"
+	echo "f00sdio: $*" >> "$LOG"
 }
 
 start() {
+	mkdir -p /var/log /run
 	grep -q ' /dev ' /proc/mounts || mount -t devtmpfs devtmpfs /dev 2>/dev/null
-	log "loading jzmmc"
-	modprobe jzmmc cd_gpio_pin=61 2>/dev/null || true
-	modprobe mmc_block 2>/dev/null || true
-	log "done"
+	log "s09 chain start"
+	/etc/init.d/S09mmc start >>"$LOG" 2>&1 || log "S09 failed"
+	modprobe mmc_block 2>/dev/null || log "mmc_block load failed"
+	log "s09 chain done"
 }
 
 case "$1" in
