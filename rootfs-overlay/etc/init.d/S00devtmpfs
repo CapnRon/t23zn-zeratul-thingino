@@ -2,5 +2,5 @@
 grep -q ' /dev ' /proc/mounts || mount -t devtmpfs devtmpfs /dev 2>/dev/null
 # POSIX shm for the Raptor rings
 mkdir -p /dev/shm
-grep -q ' /dev/shm ' /proc/mounts || mount -t tmpfs -o mode=1777,size=10M tmpfs /dev/shm 2>/dev/null
+grep -q ' /dev/shm ' /proc/mounts || mount -t tmpfs -o mode=1777,size=8M tmpfs /dev/shm 2>/dev/null
 chmod 1777 /dev/shm 2>/dev/null
