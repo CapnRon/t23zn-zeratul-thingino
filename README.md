@@ -160,3 +160,12 @@ the increment-42 hardware evidence.
 - A mid-run AP→STA switch leaves the MCU datapath broken (only the MCU's own
   stack answers). A clean STA boot forwards TCP/ICMP; provisioning ends with
   an MCU reset for that reason.
+
+## Preview and timeline
+
+- `/preview.html` — SD archive player; no live stream
+- `/timeline.html`, `/timeline_standalone.html` — recorded clip timeline
+- `/x/timeline.cgi`, `recordings.cgi`, `latest-recording.cgi` — JSON clip lists
+- `/x/video.cgi?path=...` — SD mp4 playback; Range header best-effort
+
+Requires SD mount and rmr; read GET is open, POST requires auth. Timezone offset defaults to UTC+8 and can be stored in `/data/root/etc/clock/timezone`.
