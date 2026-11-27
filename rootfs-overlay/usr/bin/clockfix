@@ -3,9 +3,15 @@
 
 LOG=/var/log/clock.log
 JOURNAL=/run/clipwatch/journal
+ARCHIVE=/mnt/mmcblk0p1/raptor
 SYNC_UTC=/run/clock.sync_utc
 SYNC_UP=/run/clock.sync_uptime
 BOOT_ID=/run/clock.boot_id
+
+cleanup() {
+	find "$ARCHIVE" -type d -empty -name '1970-01-01' -delete 2>/dev/null || true
+}
+
 [ -r "$JOURNAL" ] && [ -r "$SYNC_UTC" ] && [ -r "$SYNC_UP" ] || exit 0
 
 sync_utc=$(cat "$SYNC_UTC" 2>/dev/null)
@@ -13,67 +19,66 @@ sync_up=$(cat "$SYNC_UP" 2>/dev/null)
 boot_id=$(cat "$BOOT_ID" 2>/dev/null)
 case "$sync_utc$sync_up" in ''|*[!0-9]*) exit 0 ;; esac
 
+# Epoch encoded in an archive path (DAY/HH-MM-SS[.N].mp4); 0 when unknown.
+name_epoch() {
+	base=${1##*/}
+	day=${1%/*}
+	day=${day##*/}
+	t=$(printf '%s\n' "$base" |
+		sed -n 's/^\([0-9][0-9]\)-\([0-9][0-9]\)-\([0-9][0-9]\).*/\1:\2:\3/p')
+	[ -n "$day" ] && [ -n "$t" ] || return 0
+	epoch=$(date -u -d "$day $t" +%s 2>/dev/null)
+	case "$epoch" in ''|*[!0-9]*) return 0 ;; esac
+	echo "$epoch"
+}
+
+fix_pass() {
+	tag=$1
+	now=$(date +%s)
+	while IFS='|' read -r entry_boot path clip_up; do
+		[ -n "$entry_boot" ] || continue
+		[ "$entry_boot" = "$boot_id" ] || continue
+		case "$clip_up" in ''|*[!0-9]*) continue ;; esac
+		[ "$clip_up" -le "$sync_up" ] || continue
+		case "$path" in /dev/shm/raptor/*)
+			base=${path##*/}
+			path=$(find "$ARCHIVE" -type f -name "$base" 2>/dev/null | head -1)
+			;;
+		esac
+		[ -n "$path" ] && [ -f "$path" ] || continue
+
+		mtime=$(stat -c %Y "$path" 2>/dev/null)
+		[ -n "$mtime" ] && [ "$mtime" -ge "$((now - 5))" ] && continue
+
+		true_utc=$((sync_utc - (sync_up - clip_up)))
+
+		cur=$(name_epoch "$path")
+		case "$cur" in ''|*[!0-9]*) cur=0 ;; esac
+		if [ "$cur" -gt 0 ]; then
+			delta=$((cur - true_utc))
+			[ "$delta" -lt 0 ] && delta=$((-delta))
+			# Name already holds the corrected time (earlier pass/boot).
+			[ "$delta" -le 3 ] && continue
+		fi
+
+		new_day=$(date -u -d "@$true_utc" +%F 2>/dev/null)
+		new_time=$(date -u -d "@$true_utc" +%H-%M-%S 2>/dev/null)
+		[ -n "$new_day" ] && [ -n "$new_time" ] || continue
+		mkdir -p "$ARCHIVE/$new_day"
+		dest="$ARCHIVE/$new_day/$new_time.mp4"
+		[ "$dest" = "$path" ] && continue
+		base_dest="$dest"
+		n=1
+		while [ -e "$dest" ]; do dest="${base_dest%.mp4}.$n.mp4"; n=$((n + 1)); done
+		printf '%s %s %s -> %s (%s)\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$tag" "$path" "$dest" "$true_utc" >> "$LOG"
+		mv "$path" "$dest"
+	done < "$JOURNAL"
+	sync
+	cleanup
+}
+
 sleep 90
-now=$(date +%s)
-
-while IFS='|' read -r entry_boot path clip_up; do
-	[ -n "$entry_boot" ] || continue
-	[ "$entry_boot" = "$boot_id" ] || continue
-	case "$clip_up" in ''|*[!0-9]*) continue ;; esac
-	[ "$clip_up" -le "$sync_up" ] || continue
-	case "$path" in /dev/shm/raptor/*)
-		base=${path##*/}
-		path=$(find /mnt/mmcblk0p1/raptor -type f -name "$base" 2>/dev/null | head -1)
-		;;
-	esac
-	[ -n "$path" ] && [ -f "$path" ] || continue
-
-	mtime=$(stat -c %Y "$path" 2>/dev/null)
-	[ -n "$mtime" ] && [ "$mtime" -ge "$((now - 5))" ] && continue
-
-	true_utc=$((sync_utc - (sync_up - clip_up)))
-	new_day=$(date -u -d "@$true_utc" +%F 2>/dev/null)
-	new_time=$(date -u -d "@$true_utc" +%H-%M-%S 2>/dev/null)
-	[ -n "$new_day" ] && [ -n "$new_time" ] || continue
-	mkdir -p "/mnt/mmcblk0p1/raptor/$new_day"
-	dest="/mnt/mmcblk0p1/raptor/$new_day/$new_time.mp4"
-	[ "$dest" = "$path" ] && continue
-	base_dest="$dest"
-	n=1
-	while [ -e "$dest" ]; do dest="${base_dest%.mp4}.$n.mp4"; n=$((n + 1)); done
-	printf '%s clockfix %s -> %s (%s)\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$path" "$dest" "$true_utc" >> "$LOG"
-	mv "$path" "$dest"
-done < "$JOURNAL"
-sync
+fix_pass clockfix
 sleep 30
-now=$(date +%s)
-while IFS='|' read -r entry_boot path clip_up; do
-	[ -n "$entry_boot" ] || continue
-	[ "$entry_boot" = "$boot_id" ] || continue
-	case "$clip_up" in ''|*[!0-9]*) continue ;; esac
-	[ "$clip_up" -le "$sync_up" ] || continue
-	case "$path" in /dev/shm/raptor/*)
-		base=${path##*/}
-		path=$(find /mnt/mmcblk0p1/raptor -type f -name "$base" 2>/dev/null | head -1)
-		;;
-	esac
-	[ -n "$path" ] && [ -f "$path" ] || continue
-	mtime=$(stat -c %Y "$path" 2>/dev/null)
-	[ -n "$mtime" ] && [ "$mtime" -ge "$((now - 5))" ] && continue
-	true_utc=$((sync_utc - (sync_up - clip_up)))
-	new_day=$(date -u -d "@$true_utc" +%F 2>/dev/null)
-	new_time=$(date -u -d "@$true_utc" +%H-%M-%S 2>/dev/null)
-	[ -n "$new_day" ] && [ -n "$new_time" ] || continue
-	mkdir -p "/mnt/mmcblk0p1/raptor/$new_day"
-	dest="/mnt/mmcblk0p1/raptor/$new_day/$new_time.mp4"
-	[ "$dest" = "$path" ] && continue
-	base_dest="$dest"
-	n=1
-	while [ -e "$dest" ]; do dest="${base_dest%.mp4}.$n.mp4"; n=$((n + 1)); done
-	printf '%s clockfix-retry %s -> %s (%s)\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$path" "$dest" "$true_utc" >> "$LOG"
-	mv "$path" "$dest"
-done < "$JOURNAL"
-sync
+fix_pass clockfix-retry
 exit 0
-
-find /mnt/mmcblk0p1/raptor -type d -empty -name "1970-01-01" -delete 2>/dev/null || true

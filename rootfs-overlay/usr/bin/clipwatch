@@ -2,30 +2,67 @@
 
 # Record the first-seen monotonic time of every new clip.
 # This is the only reliable start time before the SoC clock is correct.
+#
+# The archive snapshot must happen only once the SD card is mounted: files
+# already on the card predate this boot, and journaling them would make
+# clockfix rewrite the whole archive onto the sync second.
 
 JOURNAL=/run/clipwatch/journal
 SEEN=/run/clipwatch/seen
+MNT=/mnt/mmcblk0p1
 mkdir -p /run/clipwatch
 touch "$JOURNAL"
 : > "$SEEN"
 boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown)
 
-# Snapshot existing archive first; only new clips get journal entries.
-for root in /dev/shm/raptor /mnt/mmcblk0p1/raptor; do
-	[ -d "$root" ] || continue
-	find "$root" -type f -name '*.mp4' 2>/dev/null >> "$SEEN"
-done
-sort -u "$SEEN" -o "$SEEN"
+snap_shm=0
+snap_sd=0
 
-while :; do
-	for root in /dev/shm/raptor /mnt/mmcblk0p1/raptor; do
-		[ -d "$root" ] || continue
-		find "$root" -type f -name '*.mp4' 2>/dev/null | while IFS= read -r path; do
-			grep -qxF "$path" "$SEEN" 2>/dev/null && continue
+snapshot_shm() {
+	[ "$snap_shm" = 1 ] && return 0
+	[ -d /dev/shm/raptor ] || return 0
+	find /dev/shm/raptor -type f -name '*.mp4' 2>/dev/null >> "$SEEN"
+	sort -u "$SEEN" -o "$SEEN"
+	snap_shm=1
+}
+
+sd_mounted() {
+	grep -q " $MNT " /proc/mounts 2>/dev/null
+}
+
+snapshot_sd() {
+	[ "$snap_sd" = 1 ] && return 0
+	sd_mounted || return 0
+	[ -d "$MNT/raptor" ] || return 0
+	find "$MNT/raptor" -type f -name '*.mp4' 2>/dev/null >> "$SEEN"
+	sort -u "$SEEN" -o "$SEEN"
+	snap_sd=1
+}
+
+scan_root() {
+	root=$1
+	[ -d "$root" ] || return 0
+	find "$root" -type f -name '*.mp4' 2>/dev/null | while IFS= read -r path; do
+		grep -qxF "$path" "$SEEN" 2>/dev/null && continue
+		base=${path##*/}
+		# A shm clip already tracked by basename must not be re-journaled
+		# when rmr migrates it to the card.
+		if grep -qF "|/dev/shm/raptor/$base|" "$JOURNAL" 2>/dev/null; then
 			printf '%s\n' "$path" >> "$SEEN"
-			up=$(cut -d. -f1 /proc/uptime)
-			printf '%s|%s|%s\n' "$boot" "$path" "$up" >> "$JOURNAL"
-		done
+			continue
+		fi
+		up=$(cut -d. -f1 /proc/uptime)
+		printf '%s\n' "$path" >> "$SEEN"
+		printf '%s|%s|%s\n' "$boot" "$path" "$up" >> "$JOURNAL"
 	done
+}
+
+snapshot_shm
+while :; do
+	snapshot_sd
+	scan_root /dev/shm/raptor
+	if [ "$snap_sd" = 1 ]; then
+		scan_root "$MNT/raptor"
+	fi
 	sleep 1
 done
