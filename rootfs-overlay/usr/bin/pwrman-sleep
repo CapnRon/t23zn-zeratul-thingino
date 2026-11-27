@@ -36,6 +36,25 @@ case "$PROFILE" in
 esac
 
 if is_mounted; then
+	if [ "${WAIT_SEGMENT_END:-1}" = "1" ] && pidof rmr >/dev/null 2>&1; then
+		current=$(find "$SD/raptor" -type f -name '*.mp4' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+		if [ -n "$current" ]; then
+			log "waiting for segment boundary: $current"
+			deadline=$(( $(date +%s) + 120 ))
+			while [ "$(date +%s)" -lt "$deadline" ]; do
+				newest=$(find "$SD/raptor" -type f -name '*.mp4' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+				if [ -n "$newest" ] && [ "$newest" != "$current" ]; then
+					log "segment boundary reached"
+					break
+				fi
+				sleep 1
+			done
+			if [ "$(date +%s)" -ge "$deadline" ]; then
+				log "segment boundary not reached; aborting sleep"
+				exit 1
+			fi
+		fi
+	fi
 	log "stopping recorder"
 	if ! /etc/init.d/S33rmr stop >>"$LOG" 2>&1; then
 		log "recorder did not stop; aborting sleep"
