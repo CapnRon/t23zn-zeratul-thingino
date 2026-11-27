@@ -1,0 +1,66 @@
+#!/bin/sh
+# pwrman-sleep -- quiesce recording/storage, then ask MCU to cut SoC power.
+
+CONF=/etc/pwrman.conf
+[ -r "$CONF" ] && . "$CONF"
+MCU=${MCU:-$(command -v mcu_test 2>/dev/null || echo /usr/bin/mcu_test)}
+LOG=/var/log/pwrman.log
+SD=/mnt/mmcblk0p1
+PROFILE=${PROFILE:-pir}
+
+log() {
+	mkdir -p /var/log
+	printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG"
+}
+is_mounted() {
+	grep -q " $SD " /proc/mounts
+}
+
+log "sleep requested profile=$PROFILE"
+
+case "$PROFILE" in
+	pir|pir_cloud|pir_local) ;;
+	*) log "invalid PROFILE=$PROFILE"; exit 1 ;;
+esac
+
+if ! "$MCU" --pir_enable >/dev/null 2>&1; then
+	log "sleep aborted: PIR enable failed"
+	exit 1
+fi
+log "PIR verified enabled"
+
+case "$PROFILE" in
+	pir_cloud) log "network wake: vendor AJCloud P2P (no local arm)" ;;
+	pir_local) log "network wake: local MCU dashboard listener" ;;
+	*) log "network wake: disabled (PIR only)" ;;
+esac
+
+if is_mounted; then
+	log "stopping recorder"
+	/etc/init.d/S33rmr stop >>"$LOG" 2>&1 || true
+	i=0
+	while pidof rmr >/dev/null 2>&1 && [ "$i" -lt 20 ]; do
+		sleep 1
+		i=$((i + 1))
+	done
+	if pidof rmr >/dev/null 2>&1; then
+		log "recorder still running; aborting sleep"
+		exit 1
+	fi
+	log "recorder stopped"
+	sync
+	if ! umount "$SD"; then
+		log "SD unmount failed; aborting sleep"
+		exit 1
+	fi
+	log "SD unmounted"
+else
+	log "SD not mounted; skipping recorder stop"
+fi
+
+sync
+log "calling master_poweroff"
+"$MCU" --master_poweroff
+rc=$?
+log "master_poweroff returned rc=$rc"
+exit "$rc"

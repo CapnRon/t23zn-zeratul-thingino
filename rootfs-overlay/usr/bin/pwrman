@@ -1,0 +1,97 @@
+#!/bin/sh
+# pwrman -- idle sleep manager, PIR + selected network wake profile.
+
+CONF=/etc/pwrman.conf
+[ -r "$CONF" ] && . "$CONF"
+
+MCU=${MCU:-$(command -v mcu_test 2>/dev/null || echo /usr/bin/mcu_test)}
+SLEEP=/usr/bin/pwrman-sleep
+LOG=/var/log/pwrman.log
+RUN=/run/pwrman
+LOCK=/run/pwrman.lock
+PIDFILE=$RUN/pwrman.pid
+
+mkdir -p "$RUN" /var/log
+log() {
+	printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$LOG"
+}
+now() {
+	cut -d. -f1 /proc/uptime
+}
+cleanup() {
+	rm -f "$PIDFILE"
+	rmdir "$LOCK" 2>/dev/null || true
+}
+count_clients() {
+	total=0
+	for p in $COUNT_PORTS; do
+		n=$(awk -v p="$p" 'NR>1 && $4=="01" { split($2,a,":"); if (a[2]==p) c++ } END { print c+0 }' /proc/net/tcp /proc/net/tcp6 2>/dev/null)
+		total=$((total + n))
+	done
+	echo "$total"
+}
+
+if [ "${ENABLED:-0}" != "1" ]; then
+	log "disabled by pwrman.conf"
+	exit 0
+fi
+
+case "${PROFILE:-pir}" in
+	pir|pir_cloud|pir_local) ;;
+	*)
+		log "invalid PROFILE=${PROFILE}"
+		exit 1
+		;;
+esac
+
+[ -x "$MCU" ] || { log "mcu_test missing"; exit 1; }
+[ -x "$SLEEP" ] || { log "pwrman-sleep missing"; exit 1; }
+
+if ! mkdir "$LOCK" 2>/dev/null; then
+	log "already running"
+	exit 0
+fi
+trap cleanup EXIT INT TERM
+echo $$ > "$PIDFILE"
+
+start=$(now)
+last=$start
+log "start profile=${PROFILE:-pir} min_awake=$MIN_AWAKE idle_timeout=$IDLE_TIMEOUT"
+
+if ! "$MCU" --pir_enable >/dev/null 2>&1; then
+	log "PIR enable failed; refusing automatic poweroff"
+	exit 1
+fi
+log "PIR enabled"
+
+while :; do
+	cur=$(now)
+	pir=$("$MCU" --dpir_get_status 2>/dev/null | sed -n 's/.*dpir_status = \([0-9][0-9]*\).*/\1/p')
+	if [ "$pir" = "1" ]; then
+		"$MCU" --dpir_clr_interrupt >/dev/null 2>&1 || true
+		last=$cur
+		log "PIR activity"
+	fi
+
+	[ -f "$RUN/hold" ] && last=$cur
+
+	clients=$(count_clients)
+	[ "$clients" -gt 0 ] && last=$cur
+
+	awake=$((cur - start))
+	idle=$((cur - last))
+	if [ "$awake" -ge "${MIN_AWAKE:-60}" ] && [ "$idle" -ge "${IDLE_TIMEOUT:-120}" ]; then
+		log "sleeping: awake=${awake}s idle=${idle}s clients=$clients profile=${PROFILE:-pir}"
+		PROFILE="${PROFILE:-pir}" "$SLEEP"
+		rc=$?
+		log "sleep attempt returned rc=$rc"
+		if [ "$rc" -ne 0 ]; then
+			last=$(now)
+		else
+			sleep 5
+			last=$(now)
+		fi
+	fi
+
+	sleep "${CHECK_INTERVAL:-5}"
+done
