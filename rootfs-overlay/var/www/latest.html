@@ -128,7 +128,7 @@
         return;
       }
       const data = await response.json();
-      const offset = Number(data.offset || 0);
+      const offset = data.tz_set ? Number(data.offset || 0) : -new Date().getTimezoneOffset() * 60;
       timeline.innerHTML = "";
       for (let h = 0; h < 24; h += 2) {
         const tick = document.createElement("div");

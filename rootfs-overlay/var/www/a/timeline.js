@@ -20,7 +20,7 @@
   const zoomFitEl = document.getElementById("timelineFit");
   const zoomLabelEl = document.getElementById("timelineZoomLabel");
 
-  let offset = 28800;
+  let offset = -new Date().getTimezoneOffset() * 60;
   let segments = [];
   let selected = null;
   let objectUrl = "";
@@ -68,8 +68,7 @@
 
   function makeTzOptions() {
     tzEl.innerHTML = "";
-    for (let hours = -12; hours <= 14; hours++) {
-      const value = hours * 3600;
+    for (let value = -12 * 3600; value <= 14 * 3600; value += 900) {
       const opt = document.createElement("option");
       opt.value = String(value);
       opt.textContent = fmtOffset(value);
@@ -371,7 +370,7 @@
         return;
       }
       const data = await response.json();
-      offset = Number(data.offset || 0);
+      if (data.tz_set) offset = Number(data.offset || 0);
       segments = (data.segments || []).map(parseSegment).sort((a, b) => a.start - b.start);
       makeTzOptions();
 
