@@ -1,0 +1,8 @@
+# Per-device ATBM6461 identity + dashboard keepalive endpoint.
+# Copy to /overlay/etc/zrt/identity (persistent) at provisioning time.
+# zrt-wake-prov sends this as RTOS cmd 0x3f at boot.
+DID=WVCF7ETPUNY10MPO
+MODE=NAV
+CODE=WVC
+SERVER=192.168.2.127
+PORT=12911

@@ -1,0 +1,36 @@
+#!/bin/sh
+# S98wakeprov -- point the ATBM MCU keepalive at our dashboard on every boot.
+#
+# The MCU persists the endpoint, so this is normally a no-op; it matters after a
+# stock flash, an MCU reset, or a dashboard IP change. Runs in the background so
+# it never delays boot or recording.
+
+ID=/overlay/etc/zrt/identity
+SDID=/mnt/mmcblk0p1/zrt/identity
+ALT=/etc/zrt/identity
+LOG=/var/log/wakeprov.log
+
+start() {
+	[ -x /usr/bin/zrt-wake-prov ] || return 0
+	[ -r "$ID" ] || ID=$SDID
+	[ -r "$ID" ] || ID=$ALT
+	[ -r "$ID" ] || return 0
+	. "$ID"
+	[ -n "$DID" ] || return 0
+	(
+		sleep 5
+		ZRT_DEVICE_ID="$DID" \
+		ZRT_DEVICE_MODE="${MODE:-NAV}" \
+		ZRT_VENDOR_CODE="${CODE:-WVC}" \
+			/usr/bin/zrt-wake-prov "${SERVER:-192.168.2.127}" "${PORT:-12911}" \
+			>>"$LOG" 2>&1
+	) &
+}
+
+case "$1" in
+	start) start ;;
+	stop) true ;;
+	restart) start ;;
+	*) echo "Usage: $0 {start|stop|restart}" >&2; exit 1 ;;
+esac
+exit 0
