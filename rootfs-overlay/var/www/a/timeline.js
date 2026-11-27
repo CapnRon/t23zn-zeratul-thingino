@@ -103,7 +103,14 @@
   }
 
   function currentPlayTime() {
-    return selected ? selected.start + (player.currentTime || 0) * 1000 : viewStart + viewDuration / 2;
+    if (selected) return selected.start + (player.currentTime || 0) * 1000;
+    if (dateEl.value && viewDuration >= DAY_MS) {
+      const dayStart = startOfLocalDay(dateEl.value);
+      const todays = segments.filter((s) => s.start >= dayStart && s.start < dayStart + DAY_MS);
+      const latest = todays[todays.length - 1];
+      if (latest) return latest.start + SEGMENT_MS / 2;
+    }
+    return viewStart + viewDuration / 2;
   }
 
   function setZoom(index, anchorMs) {
