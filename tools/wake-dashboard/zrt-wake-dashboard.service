@@ -1,0 +1,19 @@
+[Unit]
+Description=ZRT Wake Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/a1-work/dashboard
+ExecStart=/usr/bin/python3 /root/a1-work/dashboard/app.py
+Restart=always
+RestartSec=2
+User=root
+Environment=ZRT_HTTP_PORT=8088
+Environment=ZRT_MCU_PORT=12911
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
