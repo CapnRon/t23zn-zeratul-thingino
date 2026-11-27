@@ -2,7 +2,9 @@
 
 # Mark web activity so pwrman keeps the camera awake while someone is using
 # the UI. The dashboard itself probes by ICMP, so this only fires on real use.
-mkdir -p /run/pwrman 2>/dev/null && touch /run/pwrman/web 2>/dev/null
+mkdir -p /run/pwrman 2>/dev/null
+printf '%s\n' "$(date +%s)" >> /run/pwrman/web.log 2>/dev/null
+tail -n 20 /run/pwrman/web.log > /run/pwrman/web.tmp 2>/dev/null && mv /run/pwrman/web.tmp /run/pwrman/web.log 2>/dev/null
 
 # Session authentication middleware
 # Include this at the top of protected CGI scripts

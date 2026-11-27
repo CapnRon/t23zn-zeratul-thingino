@@ -51,7 +51,8 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 	log "already running"
 	exit 0
 fi
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 0' INT TERM
 echo $$ > "$PIDFILE"
 
 start=$(now)
@@ -75,13 +76,12 @@ while :; do
 
 	[ -f "$RUN/hold" ] && last=$cur
 
-	# Web UI activity (auth.sh touches $RUN/web on every CGI request).
-	if [ -f "$RUN/web" ]; then
-		w=$(stat -c %Y "$RUN/web" 2>/dev/null)
-		case "$w" in
-			''|*[!0-9]*) ;;
-			*) [ $(( $(date +%s) - w )) -lt "${WEB_HOLD:-120}" ] && last=$cur ;;
-		esac
+	# Web UI activity: a burst of CGI requests means someone is really using
+	# the UI. A hidden browser tab gets throttled to ~1 request/2 min and must
+	# not keep the camera awake; the visible UI heartbeats every ~5 s.
+	if [ -s "$RUN/web.log" ]; then
+		web_hits=$(awk -v t="$(( $(date +%s) - ${WEB_WINDOW:-60} ))" '$1 >= t' "$RUN/web.log" | wc -l)
+		[ "$web_hits" -ge "${WEB_MIN_HITS:-3}" ] && last=$cur
 	fi
 
 	clients=$(count_clients)
