@@ -37,17 +37,14 @@ esac
 
 if is_mounted; then
 	log "stopping recorder"
-	/etc/init.d/S33rmr stop >>"$LOG" 2>&1 || true
-	i=0
-	while pidof rmr >/dev/null 2>&1 && [ "$i" -lt 20 ]; do
-		sleep 1
-		i=$((i + 1))
-	done
+	if ! /etc/init.d/S33rmr stop >>"$LOG" 2>&1; then
+		log "recorder did not stop; aborting sleep"
+		exit 1
+	fi
 	if pidof rmr >/dev/null 2>&1; then
 		log "recorder still running; aborting sleep"
 		exit 1
 	fi
-	log "recorder stopped"
 	sync
 	if ! umount "$SD"; then
 		log "SD unmount failed; aborting sleep"
