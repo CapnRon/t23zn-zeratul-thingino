@@ -400,7 +400,10 @@
   dayEl.addEventListener("wheel", (event) => {
     if (!dateEl.value) return;
     event.preventDefault();
-    setZoom(zoomIndex + (event.deltaY < 0 ? 1 : -1), timeFromPointer(event));
+    const target = timeFromPointer(event);
+    const near = segmentAt(target);
+    const anchor = near ? Math.max(near.start, Math.min(target, near.end)) : currentPlayTime();
+    setZoom(zoomIndex + (event.deltaY < 0 ? 1 : -1), anchor);
   }, { passive: false });
 
   setInterval(() => {
