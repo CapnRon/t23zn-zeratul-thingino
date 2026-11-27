@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camera Dashboard</title>
+<style>
+:root{--bg:#0b0f17;--panel:#131a26;--panel2:#0f1520;--line:#22304a;--fg:#dbe4f0;--dim:#8a97ad;--acc:#4f9cf9;--ok:#3ddc97;--warn:#f0b429;--bad:#f45b69}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--line);background:var(--panel2)}
+h1{margin:0;font-size:19px;letter-spacing:.3px}
+h1 span{color:var(--acc)}
+.meta{color:var(--dim);font-size:13px}
+.tools{display:flex;gap:8px;flex-wrap:wrap}
+input,button{font:inherit;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:9px 12px;outline:none}
+input:focus{border-color:var(--acc)}
+button{cursor:pointer}
+button.primary{background:var(--acc);color:#06121f;border-color:var(--acc);font-weight:600}
+button.ghost{background:transparent}
+button:disabled{opacity:.5;cursor:default}
+main{padding:20px 22px 60px;max-width:1200px;margin:0 auto}
+.summary{display:flex;gap:18px;color:var(--dim);font-size:13px;margin:0 0 16px}
+.summary b{color:var(--fg)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;position:relative}
+.card h2{margin:0;font-size:16px;display:flex;align-items:center;gap:8px;min-width:0}
+.card h2 .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:3px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+.awake .dot{background:var(--ok);box-shadow:0 0 8px #3ddc9788}
+.asleep .dot{background:var(--warn)}
+.offline .dot{background:var(--bad)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px;color:var(--dim)}
+.kv b{color:var(--fg);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.actions{display:flex;gap:8px;margin-top:auto}
+.actions a,.actions button{flex:1;text-align:center;text-decoration:none;padding:9px 10px;border-radius:9px;border:1px solid var(--line);color:var(--fg);background:var(--panel2)}
+.actions a.primary{background:var(--acc);color:#06121f;border-color:var(--acc);font-weight:600}
+.actions button.primary{background:var(--acc);color:#06121f;border-color:var(--acc);font-weight:600}
+.state{font-size:11px;color:var(--dim)}
+.empty{color:var(--dim);text-align:center;padding:60px 0}
+.sec{font-size:12px;text-transform:uppercase;letter-spacing:.9px;color:var(--dim);margin:24px 0 10px;font-weight:600}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1b2434;border:1px solid var(--line);color:var(--fg);padding:11px 16px;border-radius:10px;font-size:13px;max-width:90vw;display:none;box-shadow:0 8px 30px #0008}
+#toast.show{display:block}
+.spin{width:14px;height:14px;border:2px solid #ffffff55;border-top-color:#06121f;border-radius:50%;display:inline-block;animation:r .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes r{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Camera <span>Dashboard</span></h1>
+    <div class="meta" id="meta">loading…</div>
+  </div>
+  <div class="tools">
+    <input id="addip" placeholder="camera IP" size="14">
+    <input id="addname" placeholder="name (optional)" size="16">
+    <button class="ghost" id="addbtn">Add</button>
+    <button class="ghost" id="refbtn">Refresh</button>
+  </div>
+</header>
+<main>
+  <div class="summary" id="summary"></div>
+  <h2 class="sec" id="seczrt">ZRT cameras</h2>
+  <div class="grid" id="grid"></div>
+  <div id="otherwrap" style="display:none">
+    <h2 class="sec">Other cameras</h2>
+    <div class="grid" id="gridother"></div>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = (s)=>document.querySelector(s);
+let cameras = [];
+let timer = null;
+
+function toast(msg, ms=4000){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'), ms); }
+function fmtAgo(ts){ if(!ts) return 'never'; const d=Math.max(0,Date.now()/1000-ts); if(d<60) return Math.round(d)+'s ago'; if(d<3600) return Math.round(d/60)+'m ago'; return Math.round(d/3600)+'h ago'; }
+function st(cam){ if(cam.awake) return 'awake'; if(cam.mcu_connected) return 'asleep'; return 'offline'; }
+function label(s){ return s==='awake'?'Awake':s==='asleep'?'Asleep':'Offline'; }
+
+function card(cam){
+  const el=document.createElement('div');
+  el.className='card '+st(cam);
+  const name=cam.name||cam.device_id||cam.ip;
+  const ui=cam.ui_url||('http://'+cam.ip+'/');
+  el.innerHTML = `
+    <h2><span class="dot"></span><span class="nm"></span><span class="badge" style="margin-left:auto">${label(st(cam))}</span></h2>
+    <div class="kv">
+      <span>IP</span><b>${cam.ip}</b>
+      <span>device_id</span><b>${cam.device_id||'—'}</b>
+      <span>mode/vendor</span><b>${(cam.device_mode||'—')} / ${(cam.vendor_code||'—')}</b>
+      <span>MCU</span><b>${cam.mcu_connected?'connected':'not connected'}</b>
+      <span>last MCU</span><b>${fmtAgo(cam.last_mcu_seen)}</b>
+    </div>
+    <div class="actions"></div>`;
+  el.querySelector('.nm').textContent=name;
+  const actions=el.querySelector('.actions');
+  if(cam.awake){
+    const a=document.createElement('a'); a.href=ui; a.target='_blank'; a.rel='noopener'; a.className='primary'; a.textContent='Open';
+    actions.appendChild(a);
+  }else{
+    const b=document.createElement('button'); b.className='primary'; b.textContent='Wake';
+    b.onclick=()=>wake(cam, b, el);
+    actions.appendChild(b);
+  }
+  const d=document.createElement('a'); d.href='/c/'+cam.id; d.textContent='Details'; actions.appendChild(d);
+  return el;
+}
+
+function render(){
+  const grid=$('#grid'); const ogrid=$('#gridother');
+  const zrt=cameras.filter(c=>c.kind!=='other'), other=cameras.filter(c=>c.kind==='other');
+  grid.innerHTML=''; ogrid.innerHTML='';
+  if(!zrt.length){ grid.innerHTML='<div class="empty">No ZRT cameras yet. Add one above, or wait for MCU check-in.</div>'; }
+  for(const c of zrt) grid.appendChild(card(c));
+  $('#seczrt').style.display=zrt.length?'block':'none';
+  $('#otherwrap').style.display=other.length?'block':'none';
+  for(const c of other) ogrid.appendChild(card(c));
+  const awake=zrt.filter(c=>c.awake).length, asleep=zrt.filter(c=>!c.awake&&c.mcu_connected).length, off=zrt.length-awake-asleep;
+  $('#summary').innerHTML=`<span><b>${zrt.length}</b> ZRT</span><span><b>${other.length}</b> other</span><span><b>${awake}</b> awake</span><span><b>${asleep}</b> asleep</span><span><b>${off}</b> offline</span>`;
+}
+
+async function load(){
+  try{
+    const r=await fetch('/api/cameras',{cache:'no-store'});
+    const j=await r.json();
+    cameras=j.cameras||[];
+    render();
+    $('#meta').textContent='updated '+new Date().toLocaleTimeString();
+  }catch(e){ $('#meta').textContent='dashboard unreachable'; }
+}
+
+async function wake(cam, btn, el){
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>Waking';
+  try{
+    const r=await fetch('/api/cameras/'+cam.id+'/wake',{method:'POST'});
+    const j=await r.json();
+    if(j.result==='awake'){ location.href=j.ui_url||cam.ui_url; return; }
+    if(j.result==='waking'){ return pollAwake(cam, btn); }
+    if(j.result==='unavailable'){ toast('Local wake not implemented yet: '+j.reason); reset(btn); return; }
+    if(j.result==='asleep_no_mcu'){ toast('Camera MCU is not connected to the dashboard.'); reset(btn); return; }
+    toast('Wake failed: '+(j.reason||j.result)); reset(btn);
+  }catch(e){ toast('Wake request failed: '+e); reset(btn); }
+}
+function reset(btn){ btn.disabled=false; btn.textContent='Wake'; }
+
+async function pollAwake(cam, btn){
+  const t0=Date.now();
+  const tick=async()=>{
+    try{
+      const r=await fetch('/api/cameras/'+cam.id+'/status',{cache:'no-store'});
+      const j=await r.json();
+      if(j.awake){ location.href=j.ui_url||cam.ui_url; return; }
+    }catch(e){}
+    if(Date.now()-t0>45000){ toast('Camera did not come up within 45s.'); reset(btn); return; }
+    setTimeout(tick,1000);
+  };
+  tick();
+}
+
+$('#refbtn').onclick=load;
+$('#addbtn').onclick=async()=>{
+  const ip=$('#addip').value.trim(); const name=$('#addname').value.trim();
+  if(!ip) return;
+  try{
+    const r=await fetch('/api/cameras',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ip,name:name||null})});
+    if(!r.ok) throw new Error(await r.text());
+    $('#addip').value=''; $('#addname').value='';
+    await load();
+  }catch(e){ toast('Add failed: '+e); }
+};
+$('#addip').addEventListener('keydown',e=>{ if(e.key==='Enter') $('#addbtn').click(); });
+
+load();
+timer=setInterval(load,5000);
+</script>
+</body>
+</html>

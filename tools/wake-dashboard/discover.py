@@ -1,8 +1,12 @@
+import ipaddress
+import os
 import re
 import subprocess
 
 CAM_MAC_PREFIXES = ("38:77:07",)  # ATBM6461 WiFi MAC on the ZRT/Wansview units
 NAME_HINTS = ("zrt", "thingino", "wansview", "t23", "atbm", "microscope")
+# Only cameras on these subnets belong to the ZRT fleet (comma separated).
+ZRT_SUBNETS = tuple(n for n in os.environ.get("ZRT_SUBNETS", "192.168.2.0/24").split(",") if n)
 SERVICE_TYPES = ("_http._tcp", "_https._tcp", "_rtsp._tcp", "_onvif._tcp", "_workstation._tcp")
 
 
@@ -45,9 +49,28 @@ def mdns():
     return out
 
 
-def looks_like_camera(entry):
+def in_zrt_subnet(ip):
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    for net in ZRT_SUBNETS:
+        try:
+            if addr in ipaddress.ip_network(net, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def is_zrt(entry):
+    """True for ATBM6461/MCU-fleet units (they get wake/sleep controls)."""
     mac = (entry.get("mac") or "").upper()
-    if any(mac.startswith(p) for p in CAM_MAC_PREFIXES):
+    return any(mac.startswith(p) for p in CAM_MAC_PREFIXES)
+
+
+def looks_like_camera(entry):
+    if is_zrt(entry):
         return True
     hay = " ".join(str(entry.get(k, "")) for k in ("name", "host")).lower()
     return any(h in hay for h in NAME_HINTS)

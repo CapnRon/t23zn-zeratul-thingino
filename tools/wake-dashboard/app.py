@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import signal
+import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -156,28 +157,38 @@ async def handle_mcu(reader, writer):
 
 
 def probe(url):
+    # A Session with an explicit close: a leaked probe socket (e.g. after a
+    # read timeout) looks like an active viewer to the camera's pwrman.
+    session = requests.Session()
     try:
-        r = requests.get(url, timeout=1.2, verify=False, allow_redirects=False)
+        r = session.get(url, timeout=1.2, verify=False, allow_redirects=False,
+                        headers={"Connection": "close"})
         if r.status_code < 500:
             return True, r.status_code
     except Exception:
         pass
+    finally:
+        session.close()
     return False, None
 
 
 def probe_camera(cam):
+    """Liveness by ICMP, not HTTP.
+
+    The MCU owns the IP while the SoC is off and does not answer ping, so ping
+    is a side-effect-free awake test. An HTTP probe would open a TCP connection
+    on port 80/443 that the camera's pwrman counts as a viewer and would keep
+    the camera awake forever.
+    """
     ip = cam["ip"]
-    urls = []
-    if cam.get("ui_url"):
-        urls.append(cam["ui_url"])
-    for u in (f"http://{ip}/", f"https://{ip}/"):
-        if u not in urls:
-            urls.append(u)
-    for u in urls:
-        ok, code = probe(u)
-        if ok:
-            return True, u, code
-    return False, cam.get("ui_url"), None
+    ui = cam.get("ui_url") or f"http://{ip}/"
+    try:
+        rc = subprocess.run(["ping", "-c", "1", "-W", "1", ip],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, timeout=3).returncode
+        return rc == 0, ui, None
+    except Exception:
+        return False, ui, None
 
 
 async def status_loop():
@@ -226,7 +237,10 @@ async def discover_loop():
 def cam_public(cam):
     ip = cam["ip"]
     c = MCU.get(ip)
+    mac = (cam.get("mac") or "").upper()
+    is_zrt = mac.startswith("38:77:07") or bool(cam.get("device_id")) or c is not None
     return {
+        "kind": "zrt" if is_zrt else "other",
         "id": cam["id"],
         "name": cam.get("name") or cam.get("device_id") or ip,
         "ip": ip,
