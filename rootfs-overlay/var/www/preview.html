@@ -57,6 +57,12 @@
         <button class="btn btn-outline-secondary btn-sm" id="timelineRefresh" type="button">
           <i class="bi bi-arrow-clockwise me-1"></i>Refresh
         </button>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Timeline zoom">
+          <button class="btn btn-outline-secondary" id="timelineZoomOut" type="button" title="Zoom out">−</button>
+          <button class="btn btn-outline-secondary disabled" id="timelineZoomLabel" type="button" tabindex="-1">24h</button>
+          <button class="btn btn-outline-secondary" id="timelineZoomIn" type="button" title="Zoom in">+</button>
+          <button class="btn btn-outline-secondary" id="timelineFit" type="button" title="Fit day">Fit</button>
+        </div>
       </div>
     </div>
 
@@ -67,7 +73,7 @@
       </div>
       <div class="card-body">
         <div id="timeline-shell">
-          <div class="timeline-day" id="timelineDay">
+          <div class="timeline-day" id="timelineDay" title="Drag to scrub · Shift+drag to pan · Wheel to zoom">
             <div class="timeline-empty" id="timelineEmpty">No recordings for this day.</div>
           </div>
         </div>

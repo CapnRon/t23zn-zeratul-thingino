@@ -3,6 +3,8 @@
   const VIDEO = "/x/video.cgi?path=";
   const DAY_MS = 86400000;
   const SEGMENT_MS = 60000;
+  const ZOOM_LEVELS = [DAY_MS, 6 * 3600000, 2 * 3600000, 3600000, 15 * 60000, 5 * 60000];
+  const ZOOM_LABELS = ["24h", "6h", "2h", "1h", "15m", "5m"];
 
   const dayEl = document.getElementById("timelineDay");
   const emptyEl = document.getElementById("timelineEmpty");
@@ -13,6 +15,10 @@
   const refreshEl = document.getElementById("timelineRefresh");
   const player = document.getElementById("player");
   const playerLabel = document.getElementById("playerLabel");
+  const zoomInEl = document.getElementById("timelineZoomIn");
+  const zoomOutEl = document.getElementById("timelineZoomOut");
+  const zoomFitEl = document.getElementById("timelineFit");
+  const zoomLabelEl = document.getElementById("timelineZoomLabel");
 
   let offset = 28800;
   let segments = [];
@@ -22,6 +28,12 @@
   let scrubbing = false;
   let scrubTarget = 0;
   let suppressClickUntil = 0;
+  let zoomIndex = 0;
+  let viewStart = 0;
+  let viewDuration = DAY_MS;
+  let panning = false;
+  let panStartX = 0;
+  let panStartView = 0;
   const playhead = document.createElement("div");
   playhead.className = "timeline-playhead";
   dayEl.appendChild(playhead);
@@ -72,6 +84,56 @@
     const start = Date.UTC(y, m - 1, d, hh, mm, ss);
     return { ...s, start, end: start + SEGMENT_MS };
   }
+  function updateZoomLabel() {
+    zoomLabelEl.textContent = ZOOM_LABELS[zoomIndex] || ZOOM_LABELS[0];
+  }
+
+  function clampView() {
+    const dayStart = startOfLocalDay(dateEl.value);
+    const maxStart = dayStart + DAY_MS - viewDuration;
+    viewStart = Math.max(dayStart, Math.min(viewStart, maxStart));
+  }
+
+  function fitDay() {
+    if (!dateEl.value) return;
+    zoomIndex = 0;
+    viewDuration = DAY_MS;
+    viewStart = startOfLocalDay(dateEl.value);
+    updateZoomLabel();
+  }
+
+  function currentPlayTime() {
+    return selected ? selected.start + (player.currentTime || 0) * 1000 : viewStart + viewDuration / 2;
+  }
+
+  function setZoom(index, anchorMs) {
+    index = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, index));
+    const anchor = Number.isFinite(anchorMs) ? anchorMs : currentPlayTime();
+    const ratio = viewDuration ? (anchor - viewStart) / viewDuration : 0.5;
+    viewDuration = ZOOM_LEVELS[index];
+    zoomIndex = index;
+    viewStart = anchor - ratio * viewDuration;
+    clampView();
+    updateZoomLabel();
+    render();
+  }
+
+  function tickStepFor(duration) {
+    if (duration >= 12 * 3600000) return 2 * 3600000;
+    if (duration >= 4 * 3600000) return 3600000;
+    if (duration >= 90 * 60000) return 15 * 60000;
+    if (duration >= 30 * 60000) return 5 * 60000;
+    if (duration >= 10 * 60000) return 60000;
+    return 30000;
+  }
+
+  function fmtTick(absMs, step) {
+    const d = new Date(absMs + offset * 1000);
+    const hh = pad(d.getUTCHours());
+    const mm = pad(d.getUTCMinutes());
+    const ss = pad(d.getUTCSeconds());
+    return step < 60000 ? `${hh}:${mm}:${ss}` : `${hh}:${mm}`;
+  }
 
   function render() {
     dayEl.querySelectorAll(".timeline-tick, .timeline-segment, .timeline-ruler-label")
@@ -85,30 +147,42 @@
     }
 
     const dayStart = startOfLocalDay(key);
-    const todays = segments.filter((s) => s.start >= dayStart && s.start < dayStart + DAY_MS);
+    if (viewDuration >= DAY_MS) {
+      zoomIndex = 0;
+      viewDuration = DAY_MS;
+      viewStart = dayStart;
+    }
+    clampView();
+    updateZoomLabel();
 
-    for (let h = 0; h < 24; h += 2) {
+    const start = viewStart;
+    const end = viewStart + viewDuration;
+    const visible = segments.filter((s) => s.start < end && s.end > start);
+    const step = tickStepFor(viewDuration);
+
+    for (let t = Math.ceil(start / step) * step; t < end; t += step) {
+      const left = ((t - start) / viewDuration) * 100;
       const tick = document.createElement("div");
       tick.className = "timeline-tick";
-      tick.style.left = `${(h / 24) * 100}%`;
+      tick.style.left = left + "%";
       dayEl.appendChild(tick);
 
       const label = document.createElement("span");
       label.className = "timeline-ruler-label";
-      label.style.left = `${(h / 24) * 100}%`;
-      label.textContent = `${pad(h)}:00`;
+      label.style.left = left + "%";
+      label.textContent = fmtTick(t, step);
       dayEl.appendChild(label);
     }
 
-    todays.forEach((s) => {
+    visible.forEach((s) => {
       const el = document.createElement("div");
       el.className = "timeline-segment";
       if (selected && selected.path === s.path) el.classList.add("active");
-      if (s.path.endsWith("/") || Date.now() - s.start < 10 * 60000) el.classList.add("live");
-      const left = Math.max(0, ((s.start - dayStart) / DAY_MS) * 100);
-      const width = Math.max(0.045, (SEGMENT_MS / DAY_MS) * 100);
-      el.style.left = `${left}%`;
-      el.style.width = `${width}%`;
+      if (Date.now() - s.start < 10 * 60000) el.classList.add("live");
+      const left = ((Math.max(s.start, start) - start) / viewDuration) * 100;
+      const width = ((Math.min(s.end, end) - Math.max(s.start, start)) / viewDuration) * 100;
+      el.style.left = left + "%";
+      el.style.width = Math.max(0.12, width) + "%";
       el.title = `${fmtTime(s.start)} · ${s.path}`;
       el.addEventListener("click", () => {
         if (Date.now() < suppressClickUntil) return;
@@ -117,17 +191,16 @@
       dayEl.appendChild(el);
     });
 
-    setEmpty(todays.length === 0);
+    setEmpty(visible.length === 0);
     updatePlayhead();
-    const mb = todays.reduce((n, s) => n + Number(s.size || 0), 0) / 1048576;
-    summaryEl.textContent = `${todays.length} segment${todays.length === 1 ? "" : "s"} · ${mb.toFixed(1)} MB`;
+    const mb = visible.reduce((n, s) => n + Number(s.size || 0), 0) / 1048576;
+    summaryEl.textContent = `${visible.length} visible · ${mb.toFixed(1)} MB`;
   }
 
   function setPlayhead(absMs) {
     if (!selected && !absMs) { playhead.style.display = "none"; return; }
     if (!dateEl.value) { playhead.style.display = "none"; return; }
-    const dayStart = startOfLocalDay(dateEl.value);
-    const pct = ((absMs - dayStart) / DAY_MS) * 100;
+    const pct = ((absMs - viewStart) / viewDuration) * 100;
     if (pct < 0 || pct > 100) { playhead.style.display = "none"; return; }
     playhead.style.display = "block";
     playhead.style.left = pct + "%";
@@ -150,7 +223,7 @@
   function timeFromPointer(event) {
     const rect = dayEl.getBoundingClientRect();
     const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    return startOfLocalDay(dateEl.value) + ratio * DAY_MS;
+    return viewStart + ratio * viewDuration;
   }
 
   async function playSegment(s, offsetSec = 0, autoplay = true) {
@@ -198,6 +271,11 @@
     const nextKey = localDateKey(next.start);
     if (dateEl.value !== nextKey) {
       dateEl.value = nextKey;
+      fitDay();
+      render();
+    } else if (next.start < viewStart || next.start >= viewStart + viewDuration) {
+      viewStart = next.start - viewDuration / 2;
+      clampView();
       render();
     }
     await playSegment(next, 0, true);
@@ -205,6 +283,14 @@
 
   dayEl.addEventListener("pointerdown", (event) => {
     if (!dateEl.value || !segments.length) return;
+    if (event.shiftKey) {
+      panning = true;
+      panStartX = event.clientX;
+      panStartView = viewStart;
+      try { dayEl.setPointerCapture(event.pointerId); } catch (_) {}
+      event.preventDefault();
+      return;
+    }
     scrubbing = true;
     scrubTarget = timeFromPointer(event);
     try { dayEl.setPointerCapture(event.pointerId); } catch (_) {}
@@ -213,12 +299,25 @@
   });
 
   dayEl.addEventListener("pointermove", (event) => {
+    if (panning) {
+      const rect = dayEl.getBoundingClientRect();
+      const dx = event.clientX - panStartX;
+      viewStart = panStartView - (dx / rect.width) * viewDuration;
+      clampView();
+      render();
+      return;
+    }
     if (!scrubbing) return;
     scrubTarget = timeFromPointer(event);
     setPlayhead(scrubTarget);
   });
 
   dayEl.addEventListener("pointerup", (event) => {
+    if (panning) {
+      panning = false;
+      suppressClickUntil = Date.now() + 400;
+      return;
+    }
     if (!scrubbing) return;
     scrubbing = false;
     const target = timeFromPointer(event);
@@ -243,8 +342,9 @@
     offset = Number(value);
     await fetch(`${API}?tz=${encodeURIComponent(String(offset))}`, { method: "POST" });
     tzEl.value = String(offset);
-    const key = dateEl.value || localDateKey(Date.now());
+    const key = selected ? localDateKey(selected.start) : (dateEl.value || localDateKey(Date.now()));
     dateEl.value = key;
+    fitDay();
     render();
   }
 
@@ -264,7 +364,13 @@
       makeTzOptions();
 
       const latest = segments.reduce((a, b) => (!a || b.start > a.start ? b : a), null);
-      dateEl.value = latest ? localDateKey(latest.start) : localDateKey(Date.now());
+      if (!dateEl.value || !selected) {
+        dateEl.value = latest ? localDateKey(latest.start) : localDateKey(Date.now());
+        fitDay();
+      } else {
+        clampView();
+      }
+      updateZoomLabel();
       render();
     } catch (error) {
       summaryEl.textContent = "Unable to load recordings.";
@@ -274,8 +380,16 @@
   }
 
   tzEl.addEventListener("change", (e) => setTimezone(e.target.value));
-  dateEl.addEventListener("change", render);
+  dateEl.addEventListener("change", () => { fitDay(); render(); });
   refreshEl.addEventListener("click", load);
+  zoomInEl.addEventListener("click", () => setZoom(zoomIndex + 1));
+  zoomOutEl.addEventListener("click", () => setZoom(zoomIndex - 1));
+  zoomFitEl.addEventListener("click", () => { fitDay(); render(); });
+  dayEl.addEventListener("wheel", (event) => {
+    if (!dateEl.value) return;
+    event.preventDefault();
+    setZoom(zoomIndex + (event.deltaY < 0 ? 1 : -1), timeFromPointer(event));
+  }, { passive: false });
 
   setInterval(() => {
     const now = Date.now();
