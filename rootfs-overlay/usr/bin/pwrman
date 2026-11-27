@@ -75,6 +75,15 @@ while :; do
 
 	[ -f "$RUN/hold" ] && last=$cur
 
+	# Web UI activity (auth.sh touches $RUN/web on every CGI request).
+	if [ -f "$RUN/web" ]; then
+		w=$(stat -c %Y "$RUN/web" 2>/dev/null)
+		case "$w" in
+			''|*[!0-9]*) ;;
+			*) [ $(( $(date +%s) - w )) -lt "${WEB_HOLD:-120}" ] && last=$cur ;;
+		esac
+	fi
+
 	clients=$(count_clients)
 	[ "$clients" -gt 0 ] && last=$cur
 
