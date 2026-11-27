@@ -104,13 +104,18 @@
 
   function currentPlayTime() {
     if (selected) return selected.start + (player.currentTime || 0) * 1000;
-    if (dateEl.value && viewDuration >= DAY_MS) {
-      const dayStart = startOfLocalDay(dateEl.value);
-      const todays = segments.filter((s) => s.start >= dayStart && s.start < dayStart + DAY_MS);
-      const latest = todays[todays.length - 1];
-      if (latest) return latest.start + SEGMENT_MS / 2;
+    const center = viewStart + viewDuration / 2;
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const s of segments) {
+      const mid = s.start + SEGMENT_MS / 2;
+      const distance = Math.abs(mid - center);
+      if (distance < nearestDistance) {
+        nearest = s;
+        nearestDistance = distance;
+      }
     }
-    return viewStart + viewDuration / 2;
+    return nearest ? nearest.start + SEGMENT_MS / 2 : center;
   }
 
   function setZoom(index, anchorMs) {
